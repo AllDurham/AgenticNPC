@@ -7,10 +7,14 @@ import com.agenticnpc.gateway.model.ItemSafetyResult;
 import com.agenticnpc.gateway.model.ValidationResult;
 import com.agenticnpc.model.ActionType;
 import com.agenticnpc.model.LLMResponse;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Sound;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
 
@@ -50,10 +54,20 @@ public class ActionExecutor implements ExecutionCallback {
         renderDialogue(player, response.dialogue(), brain);
 
         // 2. 执行附加动作
-        if (validation.actionType() == ActionType.GIVE_ITEM
-                && itemSafetyResult != null
-                && itemSafetyResult.safe()) {
-            executeGiveItem(player, itemSafetyResult, brain);
+        switch (validation.actionType()) {
+            case GIVE_ITEM:
+                if (itemSafetyResult != null && itemSafetyResult.safe()) {
+                    executeGiveItem(player, itemSafetyResult, brain);
+                }
+                break;
+            case TELEPORT:
+                executeTeleport(player, validation.parameters(), brain);
+                break;
+            case GIVE_EFFECT:
+                executeGiveEffect(player, validation.parameters(), brain);
+                break;
+            default:
+                break;
         }
     }
 
@@ -127,6 +141,65 @@ public class ActionExecutor implements ExecutionCallback {
             itemResult.amount(),
             brain.id()
         ));
+    }
+
+    // ================================================================
+    // 传送
+    // ================================================================
+
+    private void executeTeleport(Player player, com.agenticnpc.model.ActionParameters params, BrainConfig brain) {
+        if (params == null || params.world() == null || params.x() == null || params.y() == null || params.z() == null) {
+            logger.warning("[ActionExecutor] TELEPORT 参数不完整，跳过");
+            return;
+        }
+
+        World world = Bukkit.getWorld(params.world());
+        if (world == null) {
+            logger.warning("[ActionExecutor] TELEPORT 目标世界不存在: " + params.world());
+            player.sendMessage("§7[传送失败，目标世界不存在]");
+            return;
+        }
+
+        Location target = new Location(world, params.x(), params.y(), params.z());
+
+        // 安全检查：防止传送到虚空或基岩下方
+        if (target.getY() < -64 || target.getY() > 320) {
+            logger.warning("[ActionExecutor] TELEPORT Y 坐标越界: " + target.getY());
+            player.sendMessage("§7[传送失败，坐标异常]");
+            return;
+        }
+
+        player.teleport(target);
+        player.sendMessage("§7[你被传送到了 " + params.world() + " " + params.x().intValue() + ", " + params.y().intValue() + ", " + params.z().intValue() + "]");
+        logger.info(String.format("[ActionExecutor] 传送 | 玩家: %s | 目标: %s %.0f,%.0f,%.0f | Brain: %s",
+            player.getName(), params.world(), params.x(), params.y(), params.z(), brain.id()));
+    }
+
+    // ================================================================
+    // 药水效果
+    // ================================================================
+
+    private void executeGiveEffect(Player player, com.agenticnpc.model.ActionParameters params, BrainConfig brain) {
+        if (params == null || params.effect_name() == null || params.duration_seconds() == null || params.amplifier() == null) {
+            logger.warning("[ActionExecutor] GIVE_EFFECT 参数不完整，跳过");
+            return;
+        }
+
+        PotionEffectType type = PotionEffectType.getByName(params.effect_name().toUpperCase());
+        if (type == null) {
+            logger.warning("[ActionExecutor] 未知药水效果: " + params.effect_name());
+            player.sendMessage("§7[效果施加失败，未知效果类型]");
+            return;
+        }
+
+        // 安全截断：最大 5 分钟，最大等级 5
+        int duration = Math.min(Math.max(params.duration_seconds(), 1), 300) * 20;
+        int amplifier = Math.min(Math.max(params.amplifier(), 0), 5);
+
+        player.addPotionEffect(new PotionEffect(type, duration, amplifier));
+        player.sendMessage("§7[你获得了 " + params.effect_name().toLowerCase() + " 效果]");
+        logger.info(String.format("[ActionExecutor] 药水效果 | 玩家: %s | 效果: %s %ds Lv%d | Brain: %s",
+            player.getName(), params.effect_name(), params.duration_seconds(), params.amplifier(), brain.id()));
     }
 
     // ================================================================

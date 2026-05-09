@@ -2,9 +2,21 @@ package com.agenticnpc.model;
 
 /**
  * LLM 返回的动作参数。
- * 当 action_type 为 GIVE_ITEM 时携带此对象。
+ * 所有字段允许为 null，由各 ActionType 按需读取。
  */
 public record ActionParameters(
+    // GIVE_ITEM
     String item_id,
-    int    amount
+    Integer amount,
+
+    // TELEPORT
+    String world,
+    Double x,
+    Double y,
+    Double z,
+
+    // GIVE_EFFECT
+    String effect_name,
+    Integer duration_seconds,
+    Integer amplifier
 ) {}

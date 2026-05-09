@@ -8,7 +8,6 @@ import java.util.logging.Logger;
 /**
  * Hook 注册中心。
  * 系统启动时执行类加载探测，动态注册对应的 Listener。
- * MVP 阶段只注册 VanillaHook，Citizens/MythicMobs 在后续版本添加。
  */
 public class HookRegistry {
 
@@ -34,14 +33,14 @@ public class HookRegistry {
 
         // Citizens Hook（探测后注册）
         if (isClassPresent("net.citizensnpcs.api.event.NPCRightClickEvent")) {
-            // TODO: register(new CitizensHook(...));
-            logger.info("[Hook] 检测到 Citizens，Hook 将在后续版本支持");
+            register(new CitizensHook(brainStorage, chatCollector, logger));
+            logger.info("[Hook] Citizens Hook 已注册");
         }
 
         // MythicMobs Hook（探测后注册）
         if (isClassPresent("io.lumine.mythic.bukkit.events.MythicMobInteractEvent")) {
-            // TODO: register(new MythicMobsHook(...));
-            logger.info("[Hook] 检测到 MythicMobs，Hook 将在后续版本支持");
+            register(new MythicMobsHook(brainStorage, chatCollector, logger));
+            logger.info("[Hook] MythicMobs Hook 已注册");
         }
     }
 

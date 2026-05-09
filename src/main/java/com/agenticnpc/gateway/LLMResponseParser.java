@@ -73,6 +73,16 @@ public class LLMResponseParser {
                 "[解析][LLMResponseParser] JSON 解析失败 | 原始内容: %s | 错误: %s",
                 rawContent, e.getMessage()
             ));
+
+            // 纯文本兜底：模型忘记输出 JSON，直接输出了角色对话
+            String trimmed = rawContent.trim();
+            if (!trimmed.startsWith("{")) {
+                logger.info("[解析][LLMResponseParser] 触发纯文本兜底，已自动包装为普通对话");
+                String safeText = trimmed.length() > 200
+                    ? trimmed.substring(0, 197) + "..." : trimmed;
+                return Optional.of(new LLMResponse(safeText, "NONE", null));
+            }
+
             return Optional.empty();
         }
     }

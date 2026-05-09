@@ -8,7 +8,7 @@ llm:
   api-key: "sk-在这里填写你的API密钥"
   model: "deepseek-v4-flash"
   temperature: 0.8
-  max-tokens: 512
+  max-tokens: 1024
   timeout:
     connect-ms: 3000
     read-ms: 8000

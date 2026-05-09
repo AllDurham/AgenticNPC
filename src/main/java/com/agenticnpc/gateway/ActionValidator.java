@@ -62,9 +62,12 @@ public class ActionValidator {
             return ValidationResult.invalid("该 NPC 无权执行: " + actionType.name());
         }
 
-        // GIVE_ITEM 必须携带参数
-        if (actionType == ActionType.GIVE_ITEM && response.action_parameters() == null) {
-            return ValidationResult.invalid("GIVE_ITEM 缺少 action_parameters");
+        // 需要参数的动作类型检查
+        if ((actionType == ActionType.GIVE_ITEM
+                || actionType == ActionType.TELEPORT
+                || actionType == ActionType.GIVE_EFFECT)
+                && response.action_parameters() == null) {
+            return ValidationResult.invalid(actionType.name() + " 缺少 action_parameters");
         }
 
         return ValidationResult.valid(actionType, response.action_parameters());

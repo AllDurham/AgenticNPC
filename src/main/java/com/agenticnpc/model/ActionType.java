@@ -6,7 +6,9 @@ package com.agenticnpc.model;
  */
 public enum ActionType {
     NONE,
-    GIVE_ITEM;
+    GIVE_ITEM,
+    TELEPORT,
+    GIVE_EFFECT;
 
     /**
      * 安全解析：将字符串转换为枚举，未知值返回 NONE。

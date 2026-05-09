@@ -114,12 +114,16 @@ public class PromptBuilder {
 
         sb.append("\n");
 
-        // ---- 可执行动作说明 ----
-        if (!brain.allowedActionTypes().isEmpty()
-                && !brain.allowedActionTypes().contains("NONE")) {
+        // ---- 可执行动作说明（动态生成）----
+        boolean hasGiveItem  = brain.allowedActionTypes().contains("GIVE_ITEM");
+        boolean hasTeleport  = brain.allowedActionTypes().contains("TELEPORT");
+        boolean hasEffect    = brain.allowedActionTypes().contains("GIVE_EFFECT");
+        boolean hasAnyAction = hasGiveItem || hasTeleport || hasEffect;
+
+        if (hasAnyAction) {
             sb.append("【你可以执行的动作】\n");
 
-            if (brain.allowedActionTypes().contains("GIVE_ITEM")) {
+            if (hasGiveItem) {
                 sb.append("- GIVE_ITEM: 给予玩家物品\n");
                 sb.append("  可给予的物品（使用 Minecraft 1.12 Material 名称）: ");
                 sb.append(
@@ -128,25 +132,57 @@ public class PromptBuilder {
                         .collect(Collectors.joining(", "))
                 ).append("\n");
             }
-
+            if (hasTeleport) {
+                sb.append("- TELEPORT: 将玩家传送到指定世界坐标\n");
+            }
+            if (hasEffect) {
+                sb.append("- GIVE_EFFECT: 给予玩家药水效果（如治疗、速度等）\n");
+            }
             sb.append("\n");
         }
 
         // ---- 输出格式约束（最重要的部分，放在最后强化记忆）----
         sb.append("【输出格式（严格遵守）】\n");
         sb.append("你必须且只能以如下 JSON 格式回复，绝对不能包含任何其他内容：\n");
+
+        // 动态构建 action_type 可选值
+        StringBuilder actionValues = new StringBuilder("NONE");
+        if (hasGiveItem)  actionValues.append(", GIVE_ITEM");
+        if (hasTeleport)  actionValues.append(", TELEPORT");
+        if (hasEffect)    actionValues.append(", GIVE_EFFECT");
+
         sb.append("{\n");
         sb.append("  \"dialogue\": \"NPC 说的话（必填，不超过100字）\",\n");
-        sb.append("  \"action_type\": \"NONE 或 GIVE_ITEM（必填）\",\n");
+        sb.append("  \"action_type\": \"").append(actionValues).append("（必填）\",\n");
         sb.append("  \"action_parameters\": {\n");
-        sb.append("    \"item_id\": \"Minecraft 1.12 Material 名称（仅 GIVE_ITEM 时填写）\",\n");
-        sb.append("    \"amount\": 1\n");
-        sb.append("  }\n");
+
+        // 动态构建参数说明
+        boolean first = true;
+        if (hasGiveItem) {
+            sb.append("    \"item_id\": \"Minecraft 1.12 Material 名称\",\n");
+            sb.append("    \"amount\": 1");
+            first = false;
+        }
+        if (hasTeleport) {
+            if (!first) sb.append(",\n");
+            sb.append("    \"world\": \"世界名称\",\n");
+            sb.append("    \"x\": 0, \"y\": 64, \"z\": 0");
+            first = false;
+        }
+        if (hasEffect) {
+            if (!first) sb.append(",\n");
+            sb.append("    \"effect_name\": \"HEAL/SPEED/REGENERATION 等\",\n");
+            sb.append("    \"duration_seconds\": 30,\n");
+            sb.append("    \"amplifier\": 0");
+        }
+        sb.append("\n  }\n");
         sb.append("}\n\n");
         sb.append("当 action_type 为 NONE 时，action_parameters 填 null。\n");
-        sb.append("item_id 必须使用 Minecraft 1.12 版本的 Bukkit Material 全大写英文名称，");
-        sb.append("例如: DIAMOND, BREAD, IRON_INGOT。\n");
-        sb.append("如果不确定物品名称，将 action_type 设为 NONE，不要猜测。\n\n");
+        if (hasGiveItem) {
+            sb.append("item_id 必须使用 Minecraft 1.12 版本的 Bukkit Material 全大写英文名称，");
+            sb.append("例如: DIAMOND, BREAD, IRON_INGOT。\n");
+        }
+        sb.append("如果不确定参数，将 action_type 设为 NONE，不要猜测。\n\n");
 
         // ---- 绝对约束（放在最后，强化模型记忆）----
         sb.append("【绝对约束】\n");

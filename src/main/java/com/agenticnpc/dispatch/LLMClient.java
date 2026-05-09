@@ -112,7 +112,7 @@ public class LLMClient {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model",           config.getLLMModel());
         body.put("messages",        messages);
-        body.put("response_format", Map.of("type", "json_object")); // 强制 JSON 输出
+        // body.put("response_format", Map.of("type", "json_object")); // 暂时关闭，诊断 API 兼容性
         body.put("temperature",     config.getLLMTemperature());
         body.put("max_tokens",      config.getLLMMaxTokens());
 

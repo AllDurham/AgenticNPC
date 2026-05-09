@@ -22,6 +22,14 @@
             <id>spigot-repo</id>
             <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
         </repository>
+        <repository>
+            <id>citizens-repo</id>
+            <url>https://maven.citizensnpcs.co/repo</url>
+        </repository>
+        <repository>
+            <id>mythicmobs-repo</id>
+            <url>https://mvn.lumine.io/repository/maven-public/</url>
+        </repository>
     </repositories>
 
     <dependencies>
@@ -63,6 +71,22 @@
             <artifactId>sqlite-jdbc</artifactId>
             <version>3.46.1.0</version>
             <scope>compile</scope>
+        </dependency>
+
+        <!-- Citizens API（provided，运行时由服务器提供） -->
+        <dependency>
+            <groupId>net.citizensnpcs</groupId>
+            <artifactId>citizensapi</artifactId>
+            <version>2.0.33-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- MythicMobs API（provided，运行时由服务器提供） -->
+        <dependency>
+            <groupId>io.lumine</groupId>
+            <artifactId>Mythic-Dist</artifactId>
+            <version>5.7.0</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
