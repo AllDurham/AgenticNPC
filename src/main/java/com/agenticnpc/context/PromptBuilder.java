@@ -2,7 +2,11 @@ package com.agenticnpc.context;
 
 import com.agenticnpc.config.BrainConfig;
 import com.agenticnpc.config.ConfigManager;
+import com.agenticnpc.emotion.EmotionLevel;
+import com.agenticnpc.emotion.EmotionManager;
+import com.agenticnpc.memory.CompressionService;
 import com.agenticnpc.memory.MemoryManager;
+import com.agenticnpc.memory.PlayerProfileManager;
 import com.agenticnpc.model.ChatMessage;
 import com.agenticnpc.model.InteractionEvent;
 import com.agenticnpc.model.PromptPackage;
@@ -14,6 +18,7 @@ import org.bukkit.inventory.PlayerInventory;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -28,16 +33,25 @@ import java.util.stream.Collectors;
  */
 public class PromptBuilder {
 
-    private final ConfigManager configManager;
-    private final MemoryManager memoryManager;
-    private final Logger        logger;
+    private final ConfigManager         configManager;
+    private final MemoryManager         memoryManager;
+    private final CompressionService    compressionService;
+    private final PlayerProfileManager  profileManager;
+    private final EmotionManager        emotionManager;
+    private final Logger                logger;
 
     public PromptBuilder(ConfigManager configManager,
                          MemoryManager memoryManager,
+                         CompressionService compressionService,
+                         PlayerProfileManager profileManager,
+                         EmotionManager emotionManager,
                          Logger logger) {
-        this.configManager = configManager;
-        this.memoryManager = memoryManager;
-        this.logger        = logger;
+        this.configManager      = configManager;
+        this.memoryManager      = memoryManager;
+        this.compressionService = compressionService;
+        this.profileManager     = profileManager;
+        this.emotionManager     = emotionManager;
+        this.logger             = logger;
     }
 
     /**
@@ -99,6 +113,32 @@ public class PromptBuilder {
         sb.append("如果被问到「你记得吗」「你之前说了什么」之类的问题，");
         sb.append("直接根据历史记录中看到的内容用角色口吻回答即可。\n");
         sb.append("如果历史记录为空，则表示这是第一次对话。\n\n");
+
+        // ---- 永久画像（优先级最高）----
+        Optional<String> profile = profileManager.getProfile(player.getUniqueId(), brain.id());
+        profile.ifPresent(p -> {
+            sb.append("【关于该玩家的已知信息（由管理员记录，请优先参考）】\n");
+            sb.append(p).append("\n\n");
+        });
+
+        // ---- 压缩摘要（其次）----
+        Optional<String> summary = compressionService.loadSummary(
+            player.getUniqueId(), brain.id(), memoryManager.getRepository()
+        );
+        summary.ifPresent(s -> {
+            sb.append("【与该玩家的历史互动摘要】\n");
+            sb.append(s).append("\n\n");
+        });
+
+        // ---- 情绪值 ----
+        if (configManager.isEmotionEnabled()) {
+            EmotionLevel emotion = emotionManager.getEmotion(player.getUniqueId(), brain);
+            sb.append("【你当前对该玩家的情绪状态】\n");
+            sb.append(emotion.promptDescription).append("\n");
+            sb.append("如果本次对话让你对玩家的印象有明显改变，");
+            sb.append("在 JSON 中填写 emotion_change 字段：\n");
+            sb.append("  UPGRADE（印象变好）/ DOWNGRADE（印象变差）/ NONE（无变化）\n\n");
+        }
 
         // ---- 当前玩家状态 ----
         sb.append("【当前与你对话的玩家信息】\n");
@@ -182,7 +222,8 @@ public class PromptBuilder {
             sb.append("    \"duration_seconds\": 30,\n");
             sb.append("    \"amplifier\": 0");
         }
-        sb.append("\n  }\n");
+        sb.append("\n  },\n");
+        sb.append("  \"emotion_change\": \"UPGRADE / DOWNGRADE / NONE（可选，默认 NONE）\"\n");
         sb.append("}\n\n");
         sb.append("当 action_type 为 NONE 时，action_parameters 填 null。\n");
         if (hasGiveItem) {

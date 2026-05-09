@@ -65,6 +65,23 @@ teleport-guard:
     - "spawn"
     - "pvp_arena"
 
+# ---- 压缩配置 ----
+compression:
+  exit-threshold: 5
+  active-threshold: 10
+  max-summary-tokens: 1024
+  model: ""
+  endpoint: ""
+  api-key: ""
+
+# ---- 画像配置 ----
+profile:
+  max-tokens: 512
+
+# ---- 情绪系统 ----
+emotion:
+  enabled: true
+
 # ---- 服务器标识（BungeeCord 多实例下区分子服）----
 server-id: "survival-1"
 
@@ -112,6 +129,9 @@ brains:
     dialogue-sound-volume: 1.0
     dialogue-sound-pitch: 1.0
     action-bar-enabled: true
+    profile-scope: "brain"
+    emotion-shared: false
+    default-emotion: "NEUTRAL"
 
   # ---- 治疗师梅琳：专职治疗，不给物品不传送 ----
   - id: "healer"
@@ -133,6 +153,9 @@ brains:
     dialogue-sound-volume: 0.8
     dialogue-sound-pitch: 1.2
     action-bar-enabled: true
+    profile-scope: "brain"
+    emotion-shared: false
+    default-emotion: "FRIENDLY"
 
   # ---- 传送师奥利安：专职传送，不给物品不加效果 ----
   - id: "teleporter"
@@ -151,3 +174,6 @@ brains:
     dialogue-sound-volume: 0.5
     dialogue-sound-pitch: 1.5
     action-bar-enabled: true
+    profile-scope: "brain"
+    emotion-shared: true
+    default-emotion: "WARY"

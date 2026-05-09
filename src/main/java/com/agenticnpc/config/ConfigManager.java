@@ -75,10 +75,18 @@ public class ConfigManager {
                     .map(String::toUpperCase)
                     .collect(Collectors.toSet());
 
+                String profileScope = brainMap.containsKey("profile-scope")
+                    ? (String) brainMap.get("profile-scope") : "brain";
+                boolean emotionShared = brainMap.containsKey("emotion-shared")
+                    && (boolean) brainMap.get("emotion-shared");
+                String defaultEmotion = brainMap.containsKey("default-emotion")
+                    ? (String) brainMap.get("default-emotion") : "NEUTRAL";
+
                 BrainConfig brainConfig = new BrainConfig(
                     id, name, personality, fallback,
                     allowedActionTypes, allowedItems, allowedPotionEffects,
-                    sound, (float) volume, (float) pitch, actionBar
+                    sound, (float) volume, (float) pitch, actionBar,
+                    profileScope, emotionShared, defaultEmotion
                 );
 
                 brainConfigMap.put(id, brainConfig);
@@ -173,6 +181,23 @@ public class ConfigManager {
     public int getBungeecordSyncIntervalSeconds() {
         return config.getInt("rate-limit.bungeecord-sync-interval-seconds", 30);
     }
+
+    // ---- 压缩配置 ----
+    public int getCompressionExitThreshold()       { return config.getInt("compression.exit-threshold", 5); }
+    public int getCompressionActiveThreshold()      { return config.getInt("compression.active-threshold", 10); }
+    public int getCompressionMaxSummaryTokens()     { return config.getInt("compression.max-summary-tokens", 1024); }
+    public String getCompressionModel()             { return config.getString("compression.model", ""); }
+    public String getCompressionEndpoint()          { return config.getString("compression.endpoint", ""); }
+    public String getCompressionApiKey()            { return config.getString("compression.api-key", ""); }
+
+    // ---- 画像配置 ----
+    public int getProfileMaxTokens()                { return config.getInt("profile.max-tokens", 512); }
+
+    // ---- 情绪配置 ----
+    public boolean isEmotionEnabled()               { return config.getBoolean("emotion.enabled", true); }
+
+    // ---- 审计自动清理 ----
+    public boolean isAuditAutoCleanup()             { return config.getBoolean("audit.auto-cleanup", false); }
 
     // ---- Brain 配置 ----
     public Optional<BrainConfig> getBrainConfig(String brainId) {

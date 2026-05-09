@@ -11,6 +11,7 @@ import com.agenticnpc.dispatch.AsyncDispatcher;
 import com.agenticnpc.dispatch.CircuitBreaker;
 import com.agenticnpc.dispatch.LLMClient;
 import com.agenticnpc.dispatch.RateLimiter;
+import com.agenticnpc.emotion.EmotionManager;
 import com.agenticnpc.executor.ActionExecutor;
 import com.agenticnpc.gateway.ActionValidator;
 import com.agenticnpc.guard.PotionGuard;
@@ -20,9 +21,7 @@ import com.agenticnpc.gateway.ItemSafetyGuard;
 import com.agenticnpc.gateway.LLMResponseParser;
 import com.agenticnpc.hook.ChatCollector;
 import com.agenticnpc.hook.HookRegistry;
-import com.agenticnpc.memory.MemoryManager;
-import com.agenticnpc.memory.MemoryRepository;
-import com.agenticnpc.memory.SQLiteRepository;
+import com.agenticnpc.memory.*;
 import com.agenticnpc.storage.EntityBrainStorage;
 import com.agenticnpc.storage.EntityBrainStorageFactory;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -31,34 +30,36 @@ public class AgenticNPCPlugin extends JavaPlugin {
 
     private static AgenticNPCPlugin instance;
 
-    // ---- 配置 ----
     private ConfigManager configManager;
 
-    // ---- 安全组件 ----
+    // 安全组件
     private InputSanitizer    inputSanitizer;
     private ItemSafetyGuard   itemSafetyGuard;
     private ActionValidator   actionValidator;
     private LLMResponseParser responseParser;
 
-    // ---- 记忆系统 ----
-    private MemoryRepository memoryRepository;
-    private MemoryManager    memoryManager;
+    // 记忆系统
+    private MemoryRepository      memoryRepository;
+    private MemoryManager         memoryManager;
+    private CompressionService    compressionService;
+    private PlayerProfileManager  profileManager;
+    private EmotionManager        emotionManager;
 
-    // ---- 存储 + 状态机 ----
+    // 存储 + 状态机
     private EntityBrainStorage brainStorage;
     private ChatCollector      chatCollector;
 
-    // ---- 通信层 ----
+    // 通信层
     private LLMClient       llmClient;
     private CircuitBreaker  circuitBreaker;
     private RateLimiter     rateLimiter;
     private PromptBuilder   promptBuilder;
     private AsyncDispatcher asyncDispatcher;
 
-    // ---- 执行层 ----
+    // 执行层
     private ActionExecutor actionExecutor;
 
-    // ---- Sprint 2: 审计 + Token ----
+    // 审计 + Token
     private AuditLogger  auditLogger;
     private TokenTracker tokenTracker;
 
@@ -92,8 +93,19 @@ public class AgenticNPCPlugin extends JavaPlugin {
             configManager.getCircuitBreakerThreshold(),
             configManager.getCircuitBreakerRecoveryMs(), getLogger()
         );
-        rateLimiter   = new RateLimiter(configManager);
-        promptBuilder = new PromptBuilder(configManager, memoryManager, getLogger());
+        rateLimiter = new RateLimiter(configManager);
+
+        // Sprint 3: 压缩 + 画像 + 情绪
+        compressionService = new CompressionService(llmClient, configManager, getLogger());
+        memoryManager.setCompressionService(compressionService);
+
+        profileManager = new PlayerProfileManager(memoryRepository, configManager, getLogger());
+        emotionManager = new EmotionManager(memoryRepository, configManager, getLogger());
+
+        promptBuilder = new PromptBuilder(
+            configManager, memoryManager, compressionService,
+            profileManager, emotionManager, getLogger()
+        );
 
         // Phase 3 + 4: 调度器
         asyncDispatcher = new AsyncDispatcher(
@@ -116,7 +128,6 @@ public class AgenticNPCPlugin extends JavaPlugin {
         PotionGuard   potionGuard   = new PotionGuard(configManager, getLogger());
         actionExecutor = new ActionExecutor(configManager, teleportGuard, potionGuard, getLogger());
         asyncDispatcher.setExecutionCallback(actionExecutor);
-        getLogger().info("[执行层] ActionExecutor 已注入");
 
         // Sprint 2: 审计日志
         if (configManager.isAuditEnabled()) {
@@ -146,9 +157,8 @@ public class AgenticNPCPlugin extends JavaPlugin {
             new BindPendingListener(brainStorage, this), this);
         getServer().getPluginManager().registerEvents(chatCollector, this);
 
-        // 启动完成
         getLogger().info("========================================");
-        getLogger().info("  AgenticNPC 启动完成！（Sprint 2）");
+        getLogger().info("  AgenticNPC 启动完成！（Sprint 3）");
         getLogger().info("  LLM 端点: " + configManager.getLLMEndpoint());
         getLogger().info("  模型:     " + configManager.getLLMModel());
         getLogger().info("  服务器ID: " + configManager.getServerId());
@@ -163,6 +173,15 @@ public class AgenticNPCPlugin extends JavaPlugin {
         EntityBrainStorageFactory.reset();
         getLogger().info("[AgenticNPC] 已安全关闭。");
     }
+
+    /** 热重载：重建 LLMClient */
+    public void rebuildLLMClient() {
+        this.llmClient = new LLMClient(configManager, getLogger());
+        this.asyncDispatcher.setLLMClient(llmClient);
+        getLogger().info("[热重载] LLMClient 已重建");
+    }
+
+    public PlayerProfileManager getProfileManager() { return profileManager; }
 
     private void initMemorySystem() {
         memoryRepository = new SQLiteRepository(this, configManager, getLogger());

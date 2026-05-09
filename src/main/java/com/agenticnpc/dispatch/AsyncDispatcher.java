@@ -30,7 +30,7 @@ public class AsyncDispatcher implements InteractionPipeline {
 
     private final RateLimiter        rateLimiter;
     private final CircuitBreaker     circuitBreaker;
-    private final LLMClient          llmClient;
+    private LLMClient                llmClient;
     private final PromptBuilder      promptBuilder;
     private final LLMResponseParser  responseParser;
     private final ActionValidator    actionValidator;
@@ -86,6 +86,14 @@ public class AsyncDispatcher implements InteractionPipeline {
 
     public void setTokenTracker(TokenTracker tokenTracker) {
         this.tokenTracker = tokenTracker;
+    }
+
+    public void setLLMClient(LLMClient llmClient) {
+        this.llmClient = llmClient;
+    }
+
+    public CircuitBreaker getCircuitBreaker() {
+        return circuitBreaker;
     }
 
     @Override

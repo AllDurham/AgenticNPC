@@ -189,4 +189,48 @@ public class LLMClient {
         }
         return sb.toString();
     }
+
+    /**
+     * 直接发送 system + user 消息，绕过 PromptPackage 构建流程。
+     * 专供压缩服务、画像提取等内部 LLM 调用使用。
+     */
+    public CompletableFuture<LLMRawResult> sendRawAsync(String systemPrompt, String userContent) {
+        List<Map<String, String>> messages = List.of(
+            Map.of("role", "system", "content", systemPrompt),
+            Map.of("role", "user",   "content", userContent)
+        );
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        String compModel = config.getCompressionModel();
+        body.put("model",       (compModel != null && !compModel.isBlank()) ? compModel : config.getLLMModel());
+        body.put("messages",    messages);
+        body.put("temperature", 0.3);
+        body.put("max_tokens",  config.getCompressionMaxSummaryTokens() + 100);
+
+        String requestBody = gson.toJson(body);
+
+        String compEndpoint = config.getCompressionEndpoint();
+        String endpoint     = (compEndpoint != null && !compEndpoint.isBlank()) ? compEndpoint : config.getLLMEndpoint();
+        String compKey      = config.getCompressionApiKey();
+        String apiKey       = (compKey != null && !compKey.isBlank()) ? compKey : config.getLLMApiKey();
+
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(endpoint))
+            .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer " + apiKey)
+            .timeout(Duration.ofMillis(config.getReadTimeoutMs()))
+            .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
+            .build();
+
+        return httpClient
+            .sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            .thenApply(response -> {
+                if (response.statusCode() != 200) {
+                    throw new LLMException("压缩 API 错误: " + response.statusCode());
+                }
+                String fullBody = response.body();
+                String content  = extractContent(fullBody);
+                return new LLMRawResult(content, fullBody);
+            });
+    }
 }

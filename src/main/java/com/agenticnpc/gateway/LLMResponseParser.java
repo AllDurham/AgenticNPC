@@ -80,7 +80,7 @@ public class LLMResponseParser {
                 logger.info("[解析][LLMResponseParser] 触发纯文本兜底，已自动包装为普通对话");
                 String safeText = trimmed.length() > 200
                     ? trimmed.substring(0, 197) + "..." : trimmed;
-                return Optional.of(new LLMResponse(safeText, "NONE", null));
+                return Optional.of(new LLMResponse(safeText, "NONE", null, null));
             }
 
             return Optional.empty();

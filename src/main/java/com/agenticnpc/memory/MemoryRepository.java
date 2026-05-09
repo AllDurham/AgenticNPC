@@ -2,8 +2,8 @@ package com.agenticnpc.memory;
 
 import com.agenticnpc.model.ChatMessage;
 
-import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -12,24 +12,25 @@ import java.util.UUID;
  */
 public interface MemoryRepository {
 
-    /**
-     * 加载指定玩家与 NPC 最近 N 条对话历史。
-     * 返回结果按时间正序排列（最旧在队列头部）。
-     */
+    // ---- 对话历史 ----
     Deque<ChatMessage> loadRecent(UUID playerId, String brainId, int limit);
-
-    /**
-     * 保存对话历史（全量替换策略）。
-     */
     void save(UUID playerId, String brainId, Deque<ChatMessage> history);
-
-    /**
-     * 删除指定玩家的所有历史（GDPR / 隐私清理用）。
-     */
     void deleteAll(UUID playerId);
 
-    /**
-     * 关闭数据库连接池（插件卸载时调用）。
-     */
+    // ---- 对话摘要 ----
+    Optional<String> loadSummary(UUID playerId, String brainId);
+    void saveSummary(UUID playerId, String brainId, String summary,
+                     int tokenCount, int roundCount);
+    void deleteSummary(UUID playerId, String brainId);
+
+    // ---- 永久画像 ----
+    Optional<String> loadProfile(UUID playerId, String scopeId, String scopeType);
+    void saveProfile(UUID playerId, String scopeId, String scopeType, String profile);
+    void deleteProfile(UUID playerId, String scopeId, String scopeType);
+
+    // ---- 情绪值 ----
+    String loadEmotion(String keyId, String brainId);
+    void saveEmotion(String keyId, String brainId, String emotionLevel);
+
     void shutdown();
 }

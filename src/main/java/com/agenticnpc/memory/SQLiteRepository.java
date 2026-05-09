@@ -10,6 +10,7 @@ import java.io.File;
 import java.sql.*;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Logger;
 
@@ -119,6 +120,44 @@ public class SQLiteRepository implements MemoryRepository {
                 ON token_usage (brain_id, timestamp_ms)
                 """);
 
+            // ---- 对话摘要表 ----
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS conversation_summary (
+                    player_uuid  TEXT    NOT NULL,
+                    brain_id     TEXT    NOT NULL,
+                    summary      TEXT    NOT NULL,
+                    token_count  INTEGER NOT NULL DEFAULT 0,
+                    round_count  INTEGER NOT NULL DEFAULT 0,
+                    updated_at   INTEGER NOT NULL,
+                    PRIMARY KEY (player_uuid, brain_id)
+                )
+                """);
+
+            // ---- 永久画像表 ----
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS player_profile (
+                    player_uuid  TEXT    NOT NULL,
+                    scope_id     TEXT    NOT NULL,
+                    scope_type   TEXT    NOT NULL,
+                    profile      TEXT    NOT NULL,
+                    token_count  INTEGER NOT NULL DEFAULT 0,
+                    created_at   INTEGER NOT NULL,
+                    updated_at   INTEGER NOT NULL,
+                    PRIMARY KEY (player_uuid, scope_id, scope_type)
+                )
+                """);
+
+            // ---- 情绪值表 ----
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS npc_emotion (
+                    player_uuid   TEXT    NOT NULL,
+                    brain_id      TEXT    NOT NULL,
+                    emotion_level TEXT    NOT NULL DEFAULT 'NEUTRAL',
+                    updated_at    INTEGER NOT NULL,
+                    PRIMARY KEY (player_uuid, brain_id)
+                )
+                """);
+
         } catch (SQLException e) {
             throw new RuntimeException("[数据库] SQLite Schema 初始化失败", e);
         }
@@ -220,6 +259,148 @@ public class SQLiteRepository implements MemoryRepository {
             ps.executeUpdate();
         } catch (SQLException e) {
             logger.warning("[数据库] 删除历史失败 | 玩家: " + playerId + " | 错误: " + e.getMessage());
+        }
+    }
+
+    // ---- 对话摘要 ----
+
+    @Override
+    public Optional<String> loadSummary(UUID playerId, String brainId) {
+        String sql = "SELECT summary FROM conversation_summary WHERE player_uuid = ? AND brain_id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, playerId.toString());
+            ps.setString(2, brainId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return Optional.of(rs.getString("summary"));
+        } catch (SQLException e) {
+            logger.warning("[数据库] 加载摘要失败: " + e.getMessage());
+        }
+        return Optional.empty();
+    }
+
+    @Override
+    public void saveSummary(UUID playerId, String brainId, String summary,
+                            int tokenCount, int roundCount) {
+        String sql = """
+            INSERT OR REPLACE INTO conversation_summary
+            (player_uuid, brain_id, summary, token_count, round_count, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, playerId.toString());
+            ps.setString(2, brainId);
+            ps.setString(3, summary);
+            ps.setInt(4, tokenCount);
+            ps.setInt(5, roundCount);
+            ps.setLong(6, System.currentTimeMillis());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            logger.warning("[数据库] 保存摘要失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void deleteSummary(UUID playerId, String brainId) {
+        String sql = "DELETE FROM conversation_summary WHERE player_uuid = ? AND brain_id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, playerId.toString());
+            ps.setString(2, brainId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            logger.warning("[数据库] 删除摘要失败: " + e.getMessage());
+        }
+    }
+
+    // ---- 永久画像 ----
+
+    @Override
+    public Optional<String> loadProfile(UUID playerId, String scopeId, String scopeType) {
+        String sql = "SELECT profile FROM player_profile WHERE player_uuid = ? AND scope_id = ? AND scope_type = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, playerId.toString());
+            ps.setString(2, scopeId);
+            ps.setString(3, scopeType);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return Optional.of(rs.getString("profile"));
+        } catch (SQLException e) {
+            logger.warning("[数据库] 加载画像失败: " + e.getMessage());
+        }
+        return Optional.empty();
+    }
+
+    @Override
+    public void saveProfile(UUID playerId, String scopeId, String scopeType, String profile) {
+        String sql = """
+            INSERT OR REPLACE INTO player_profile
+            (player_uuid, scope_id, scope_type, profile, token_count, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            long now = System.currentTimeMillis();
+            ps.setString(1, playerId.toString());
+            ps.setString(2, scopeId);
+            ps.setString(3, scopeType);
+            ps.setString(4, profile);
+            ps.setInt(5, 0);
+            ps.setLong(6, now);
+            ps.setLong(7, now);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            logger.warning("[数据库] 保存画像失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void deleteProfile(UUID playerId, String scopeId, String scopeType) {
+        String sql = "DELETE FROM player_profile WHERE player_uuid = ? AND scope_id = ? AND scope_type = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, playerId.toString());
+            ps.setString(2, scopeId);
+            ps.setString(3, scopeType);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            logger.warning("[数据库] 删除画像失败: " + e.getMessage());
+        }
+    }
+
+    // ---- 情绪值 ----
+
+    @Override
+    public String loadEmotion(String keyId, String brainId) {
+        String sql = "SELECT emotion_level FROM npc_emotion WHERE player_uuid = ? AND brain_id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, keyId);
+            ps.setString(2, brainId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return rs.getString("emotion_level");
+        } catch (SQLException e) {
+            logger.warning("[数据库] 加载情绪失败: " + e.getMessage());
+        }
+        return null;
+    }
+
+    @Override
+    public void saveEmotion(String keyId, String brainId, String emotionLevel) {
+        String sql = """
+            INSERT OR REPLACE INTO npc_emotion (player_uuid, brain_id, emotion_level, updated_at)
+            VALUES (?, ?, ?, ?)
+            """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, keyId);
+            ps.setString(2, brainId);
+            ps.setString(3, emotionLevel);
+            ps.setLong(4, System.currentTimeMillis());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            logger.warning("[数据库] 保存情绪失败: " + e.getMessage());
         }
     }
 

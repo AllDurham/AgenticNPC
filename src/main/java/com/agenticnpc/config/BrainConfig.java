@@ -17,5 +17,8 @@ public record BrainConfig(
     String        dialogueSound,
     float         dialogueSoundVolume,
     float         dialogueSoundPitch,
-    boolean       actionBarEnabled
+    boolean       actionBarEnabled,
+    String        profileScope,      // "brain" 或 "entity"
+    boolean       emotionShared,     // true=全体共享情绪
+    String        defaultEmotion     // 初始情绪档位
 ) {}

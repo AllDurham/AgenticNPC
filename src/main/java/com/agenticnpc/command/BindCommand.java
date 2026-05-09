@@ -125,7 +125,16 @@ public class BindCommand implements CommandExecutor, TabCompleter {
 
     private boolean handleReload(Player player) {
         config.reload();
-        player.sendMessage("§a[AgenticNPC] §f配置已重载！");
+
+        var plugin = com.agenticnpc.AgenticNPCPlugin.getInstance();
+        plugin.rebuildLLMClient();
+        plugin.getAsyncDispatcher().getCircuitBreaker().reset();
+        plugin.getProfileManager().invalidateCache();
+
+        player.sendMessage("§a[AgenticNPC] §f配置已热重载！");
+        player.sendMessage("§7- API Key 已更新");
+        player.sendMessage("§7- 熔断器已重置");
+        player.sendMessage("§7- 画像缓存已清空");
         return true;
     }
 

@@ -58,6 +58,13 @@ public class CircuitBreaker {
 
     public State getState() { return state; }
 
+    public void reset() {
+        this.state = State.CLOSED;
+        this.failureCount.set(0);
+        this.openedAtMs = 0;
+        logger.info("[熔断器] 状态已手动重置");
+    }
+
     // ================================================================
 
     private <T> CompletableFuture<T> executeWithTracking(

@@ -25,6 +25,7 @@ public class MemoryManager {
     private final MemoryRepository                  repository;
     private final ConfigManager                     config;
     private final Logger                            logger;
+    private CompressionService                      compressionService;
 
     public MemoryManager(MemoryRepository repository, ConfigManager config, Logger logger) {
         this.repository = repository;
@@ -36,6 +37,14 @@ public class MemoryManager {
             .maximumSize(config.getMemoryMaxSessions())
             .removalListener(this::onEviction)
             .build();
+    }
+
+    public void setCompressionService(CompressionService compressionService) {
+        this.compressionService = compressionService;
+    }
+
+    public MemoryRepository getRepository() {
+        return repository;
     }
 
     /**
@@ -101,6 +110,16 @@ public class MemoryManager {
         // 异步持久化（调用方已在异步线程）
         repository.save(playerId, brainId, history);
 
+        // 检查是否触发主动压缩
+        if (compressionService != null) {
+            int currentRounds = history.size() / 2;
+            int activeThreshold = config.getCompressionActiveThreshold();
+            if (currentRounds >= activeThreshold) {
+                logger.info("[Memory] 对话轮数达到压缩阈值，触发主动压缩");
+                compressionService.compressAsync(playerId, brainId, history, repository);
+            }
+        }
+
         if (config.isDebugMode()) {
             logger.info("[Memory] 已追加并持久化 | Key: " + cacheKey
                 + " | 当前条数: " + history.size());
@@ -120,6 +139,17 @@ public class MemoryManager {
                 String[] parts  = e.getKey().split("::", 2);
                 UUID     pId    = UUID.fromString(parts[0]);
                 String   bId    = parts[1];
+
+                // 检查退出压缩
+                if (compressionService != null) {
+                    int exitThreshold = config.getCompressionExitThreshold();
+                    int rounds = e.getValue().size() / 2;
+                    if (rounds >= exitThreshold) {
+                        compressionService.compressAsync(pId, bId, e.getValue(), repository);
+                        return; // 压缩服务会负责持久化
+                    }
+                }
+
                 repository.save(pId, bId, e.getValue());
             });
 
