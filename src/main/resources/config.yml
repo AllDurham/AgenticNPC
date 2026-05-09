@@ -1,5 +1,5 @@
 # ================================================================
-# AgenticNPC 配置文件 v1.0
+# AgenticNPC 配置文件 v1.1
 # ================================================================
 
 # ---- LLM API 配置 ----
@@ -55,6 +55,16 @@ database:
     username: "root"
     password: "your_password"
 
+# ---- 传送守卫（WorldGuard 领地限制）----
+teleport-guard:
+  enabled: false
+  # whitelist: 只能传送到列表中的领地
+  # blacklist: 禁止传送到列表中的领地
+  mode: "blacklist"
+  regions:
+    - "spawn"
+    - "pvp_arena"
+
 # ---- 调试模式 ----
 debug: true
 
@@ -62,8 +72,9 @@ debug: true
 # NPC Brain 配置
 # ================================================================
 brains:
+  # ---- 艾尔文：神秘旅行者（全能型）----
   - id: "default_npc"
-    name: "神秘旅行者"
+    name: "艾尔文"
     personality: >
       你是一个见多识广的神秘旅行者，走遍了这片大陆的每个角落。
       你性格内敛而睿智，说话简短有深度，不轻易透露自己的过去。
@@ -73,11 +84,57 @@ brains:
     fallback-dialogue: "命运的齿轮暂时停止了转动..."
     allowed-action-types:
       - "GIVE_ITEM"
+      - "TELEPORT"
+      - "GIVE_EFFECT"
     allowed-items:
       - "BREAD"
       - "APPLE"
       - "DIAMOND"
+    allowed-potion-effects:
+      - "HEAL"
+      - "REGENERATION"
+      - "SPEED"
+      - "NIGHT_VISION"
     dialogue-sound: "ENTITY_VILLAGER_AMBIENT"
     dialogue-sound-volume: 1.0
     dialogue-sound-pitch: 1.0
+    action-bar-enabled: true
+
+  # ---- 治疗师梅琳：专职治疗，不给物品不传送 ----
+  - id: "healer"
+    name: "梅琳"
+    personality: >
+      你是村庄里的治疗师梅琳，温柔善良，精通草药和治愈魔法。
+      你看到受伤的冒险者会心生怜悯，主动提供治疗效果。
+      你不会给予物品，也不会传送他人，但你的治愈之力无人能及。
+      你说话温柔，喜欢用"亲爱的"称呼对方。
+    fallback-dialogue: "治愈之力暂时消散了..."
+    allowed-action-types:
+      - "GIVE_EFFECT"
+    allowed-items: []
+    allowed-potion-effects:
+      - "HEAL"
+      - "REGENERATION"
+      - "ABSORPTION"
+    dialogue-sound: "ENTITY_VILLAGER_AMBIENT"
+    dialogue-sound-volume: 0.8
+    dialogue-sound-pitch: 1.2
+    action-bar-enabled: true
+
+  # ---- 传送师奥利安：专职传送，不给物品不加效果 ----
+  - id: "teleporter"
+    name: "奥利安"
+    personality: >
+      你是掌握空间魔法的传送师奥利安，性格高傲但实力强大。
+      你可以在瞬间将人送到大陆的任何角落，但你需要对方明确说出目的地。
+      你从不白干活——除非对方表现出足够的诚意或有趣的灵魂。
+      你说话带点神秘感，喜欢用"空间的涟漪"之类的比喻。
+    fallback-dialogue: "空间的涟漪暂时紊乱了..."
+    allowed-action-types:
+      - "TELEPORT"
+    allowed-items: []
+    allowed-potion-effects: []
+    dialogue-sound: "ENTITY_ENDER_DRAGON_FLAP"
+    dialogue-sound-volume: 0.5
+    dialogue-sound-pitch: 1.5
     action-bar-enabled: true

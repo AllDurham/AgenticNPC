@@ -10,6 +10,8 @@ import com.agenticnpc.dispatch.LLMClient;
 import com.agenticnpc.dispatch.RateLimiter;
 import com.agenticnpc.executor.ActionExecutor;
 import com.agenticnpc.gateway.ActionValidator;
+import com.agenticnpc.guard.PotionGuard;
+import com.agenticnpc.guard.TeleportGuard;
 import com.agenticnpc.gateway.InputSanitizer;
 import com.agenticnpc.gateway.ItemSafetyGuard;
 import com.agenticnpc.gateway.LLMResponseParser;
@@ -116,8 +118,10 @@ public class AgenticNPCPlugin extends JavaPlugin {
             new BindPendingListener(brainStorage, this), this);
         getServer().getPluginManager().registerEvents(chatCollector, this);
 
-        // Phase 5: 执行层
-        actionExecutor = new ActionExecutor(configManager, getLogger());
+        // Phase 5: 执行层（含传送守卫 + 药水守卫）
+        TeleportGuard teleportGuard = new TeleportGuard(configManager, getLogger());
+        PotionGuard   potionGuard   = new PotionGuard(configManager, getLogger());
+        actionExecutor = new ActionExecutor(configManager, teleportGuard, potionGuard, getLogger());
         asyncDispatcher.setExecutionCallback(actionExecutor);
         getLogger().info("[执行层] ActionExecutor 已注入");
 

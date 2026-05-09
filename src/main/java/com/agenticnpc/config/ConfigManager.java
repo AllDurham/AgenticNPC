@@ -56,6 +56,11 @@ public class ConfigManager {
                                              ? (List<String>) brainMap.get("allowed-items")
                                              : List.of();
 
+                @SuppressWarnings("unchecked")
+                List<String> effectNames = brainMap.containsKey("allowed-potion-effects")
+                                               ? (List<String>) brainMap.get("allowed-potion-effects")
+                                               : List.of();
+
                 // 将物品名解析为 Material Set
                 Set<Material> allowedItems = itemNames.stream()
                     .map(itemName -> Material.matchMaterial(itemName.toUpperCase()))
@@ -66,9 +71,13 @@ public class ConfigManager {
                     .map(String::toUpperCase)
                     .collect(Collectors.toSet());
 
+                Set<String> allowedPotionEffects = effectNames.stream()
+                    .map(String::toUpperCase)
+                    .collect(Collectors.toSet());
+
                 BrainConfig brainConfig = new BrainConfig(
                     id, name, personality, fallback,
-                    allowedActionTypes, allowedItems,
+                    allowedActionTypes, allowedItems, allowedPotionEffects,
                     sound, (float) volume, (float) pitch, actionBar
                 );
 
@@ -118,6 +127,24 @@ public class ConfigManager {
     public String getMysqlDatabase() { return config.getString("database.mysql.database"); }
     public String getMysqlUser()     { return config.getString("database.mysql.username"); }
     public String getMysqlPassword() { return config.getString("database.mysql.password"); }
+
+    // ---- 传送守卫配置（WorldGuard）----
+    public boolean isTeleportGuardEnabled() {
+        return config.getBoolean("teleport-guard.enabled", false);
+    }
+    public String getTeleportGuardMode() {
+        return config.getString("teleport-guard.mode", "blacklist");
+    }
+    public Set<String> getTeleportGuardRegions() {
+        return new HashSet<>(config.getStringList("teleport-guard.regions"));
+    }
+
+    // ---- 药水效果白名单 ----
+    public Set<String> getAllowedPotionEffects(String brainId) {
+        return getBrainConfig(brainId)
+            .map(BrainConfig::allowedPotionEffects)
+            .orElse(Set.of());
+    }
 
     // ---- Brain 配置 ----
     public Optional<BrainConfig> getBrainConfig(String brainId) {

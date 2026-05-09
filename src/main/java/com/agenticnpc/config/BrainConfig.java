@@ -13,6 +13,7 @@ public record BrainConfig(
     String        fallbackDialogue,
     Set<String>   allowedActionTypes,
     Set<Material> allowedItems,
+    Set<String>   allowedPotionEffects,
     String        dialogueSound,
     float         dialogueSoundVolume,
     float         dialogueSoundPitch,
