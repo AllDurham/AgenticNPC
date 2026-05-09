@@ -69,7 +69,10 @@ public class InputSanitizer {
             }
         }
 
-        // 4. Unicode 规范化（防同形字攻击）
+        // 4. 剥离标签逃逸（防 Prompt 注入突破 XML 隔离层）
+        processed = processed.replaceAll("</(?i)user_input>", "< /user_input>");
+
+        // 5. Unicode 规范化（防同形字攻击）
         String normalized = Normalizer.normalize(processed, Normalizer.Form.NFKC);
 
         if (config.isDebugMode()) {
