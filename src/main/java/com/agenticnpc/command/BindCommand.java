@@ -150,6 +150,25 @@ public class BindCommand implements CommandExecutor, TabCompleter {
                 .filter(id -> id.startsWith(args[1].toLowerCase()))
                 .collect(Collectors.toList());
         }
+        if (args.length == 2 && "stats".equalsIgnoreCase(args[0])) {
+            return List.of("player", "brain").stream()
+                .filter(s -> s.startsWith(args[1].toLowerCase()))
+                .collect(Collectors.toList());
+        }
+        if (args.length == 3 && "stats".equalsIgnoreCase(args[0])) {
+            if ("player".equalsIgnoreCase(args[1])) {
+                return org.bukkit.Bukkit.getOnlinePlayers().stream()
+                    .map(org.bukkit.entity.Player::getName)
+                    .filter(n -> n.toLowerCase().startsWith(args[2].toLowerCase()))
+                    .collect(Collectors.toList());
+            }
+            if ("brain".equalsIgnoreCase(args[1])) {
+                return config.getAllBrains().stream()
+                    .map(b -> b.id())
+                    .filter(id -> id.startsWith(args[2].toLowerCase()))
+                    .collect(Collectors.toList());
+            }
+        }
         return List.of();
     }
 }
