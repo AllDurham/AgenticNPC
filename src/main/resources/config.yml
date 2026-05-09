@@ -1,0 +1,83 @@
+# ================================================================
+# AgenticNPC 配置文件 v1.0
+# ================================================================
+
+# ---- LLM API 配置 ----
+llm:
+  endpoint: "https://api.deepseek.com/chat/completions"
+  api-key: "sk-在这里填写你的API密钥"
+  model: "deepseek-v4-flash"
+  temperature: 0.8
+  max-tokens: 512
+  timeout:
+    connect-ms: 3000
+    read-ms: 8000
+
+# ---- 限流配置 ----
+rate-limit:
+  global-per-player: false
+  max-requests: 5
+  period-ms: 60000
+
+# ---- 熔断器配置 ----
+circuit-breaker:
+  failure-threshold: 5
+  recovery-time-ms: 30000
+
+# ---- 记忆配置 ----
+memory:
+  ttl-minutes: 5
+  max-sessions: 500
+  max-history-per-session: 10
+
+# ---- 上下文配置 ----
+context:
+  inventory-enabled: true
+
+# ---- 渲染配置 ----
+render:
+  action-bar-enabled: true
+  sound-enabled: true
+
+# ---- 降级话术 ----
+fallback:
+  dialogue: "魔法波动过于剧烈，NPC 陷入了沉思..."
+
+# ---- 数据库配置 ----
+database:
+  backend: "sqlite"
+  sqlite:
+    file: "memories.db"
+  mysql:
+    host: "localhost"
+    port: 3306
+    database: "agentic_npc"
+    username: "root"
+    password: "your_password"
+
+# ---- 调试模式 ----
+debug: true
+
+# ================================================================
+# NPC Brain 配置
+# ================================================================
+brains:
+  - id: "default_npc"
+    name: "神秘旅行者"
+    personality: >
+      你是一个见多识广的神秘旅行者，走遍了这片大陆的每个角落。
+      你性格内敛而睿智，说话简短有深度，不轻易透露自己的过去。
+      你对初次见面的冒险者保持礼貌但略显疏离，不会主动给予物品。
+      只有当旅行者真正需要帮助且你认为值得时，才会慷慨解囊。
+      你的名字是艾尔文，但你很少主动介绍自己，除非对方直接询问。
+    fallback-dialogue: "命运的齿轮暂时停止了转动..."
+    allowed-action-types:
+      - "GIVE_ITEM"
+    allowed-items:
+      - "BREAD"
+      - "APPLE"
+      - "DIAMOND"
+    dialogue-sound: "ENTITY_VILLAGER_AMBIENT"
+    dialogue-sound-volume: 1.0
+    dialogue-sound-pitch: 1.0
+    action-bar-enabled: true

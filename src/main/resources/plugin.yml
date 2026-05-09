@@ -1,0 +1,12 @@
+name: AgenticNPC
+version: 1.0-SNAPSHOT
+main: com.agenticnpc.AgenticNPCPlugin
+api-version: "1.13"
+description: AI-powered NPC middleware for Minecraft
+author: AgenticNPC Team
+
+commands:
+  agenticnpc:
+    description: AgenticNPC 主命令
+    aliases: [anpc]
+    usage: /anpc <bind|unbind|reload|status>
