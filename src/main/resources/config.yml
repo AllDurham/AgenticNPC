@@ -65,6 +65,19 @@ teleport-guard:
     - "spawn"
     - "pvp_arena"
 
+# ---- 服务器标识（BungeeCord 多实例下区分子服）----
+server-id: "survival-1"
+
+# ---- Token 告警配置 ----
+token-alert:
+  single-request-threshold: 800
+  daily-player-threshold: 10000
+
+# ---- 审计日志配置 ----
+audit:
+  enabled: true
+  retention-days: 30
+
 # ---- 调试模式 ----
 debug: true
 

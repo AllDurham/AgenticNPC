@@ -27,10 +27,15 @@ public class BindCommand implements CommandExecutor, TabCompleter {
 
     private final EntityBrainStorage brainStorage;
     private final ConfigManager      config;
+    private StatsCommand             statsCommand;
 
     public BindCommand(EntityBrainStorage brainStorage, ConfigManager config) {
         this.brainStorage = brainStorage;
         this.config       = config;
+    }
+
+    public void setStatsCommand(StatsCommand statsCommand) {
+        this.statsCommand = statsCommand;
     }
 
     @Override
@@ -56,6 +61,7 @@ public class BindCommand implements CommandExecutor, TabCompleter {
             case "unbind" -> handleUnbind(player);
             case "status" -> handleStatus(player);
             case "reload" -> handleReload(player);
+            case "stats"  -> { if (statsCommand != null) statsCommand.handle(player, args); yield true; }
             default       -> { sendHelp(player); yield true; }
         };
     }
@@ -136,7 +142,7 @@ public class BindCommand implements CommandExecutor, TabCompleter {
     public List<String> onTabComplete(CommandSender sender, Command command,
                                        String alias, String[] args) {
         if (args.length == 1) {
-            return List.of("bind", "unbind", "status", "reload");
+            return List.of("bind", "unbind", "status", "reload", "stats");
         }
         if (args.length == 2 && "bind".equalsIgnoreCase(args[0])) {
             return config.getAllBrains().stream()

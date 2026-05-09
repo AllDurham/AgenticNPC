@@ -24,10 +24,18 @@ import java.util.logging.Logger;
  * LLM HTTP 客户端。
  *
  * 使用 Java 17 内置 HttpClient（零额外依赖）。
- * 强制使用 response_format: json_object 确保结构化输出。
  * 请求级超时：连接 3s，读取 8s。
  */
 public class LLMClient {
+
+    /**
+     * LLM 原始响应结果。
+     * 同时携带提取后的 content 和完整响应体（用于 Token 统计）。
+     */
+    public record LLMRawResult(
+        String contentText,      // 已提取的 content 字段
+        String fullResponseBody  // 完整响应体（用于 Token 统计）
+    ) {}
 
     private final HttpClient    httpClient;
     private final ConfigManager config;
@@ -47,9 +55,9 @@ public class LLMClient {
      * 异步发送 Prompt 到 LLM API。
      *
      * @param promptPackage 组装好的 Prompt 包
-     * @return LLM 返回的 content 字符串（原始 JSON 文本）
+     * @return LLMRawResult 包含 content 和完整响应体
      */
-    public CompletableFuture<String> sendAsync(PromptPackage promptPackage) {
+    public CompletableFuture<LLMRawResult> sendAsync(PromptPackage promptPackage) {
         String requestBody = buildRequestBody(promptPackage);
 
         if (config.isDebugMode()) {
@@ -78,7 +86,9 @@ public class LLMClient {
                     throw new LLMException("API 错误，状态码: " + response.statusCode());
                 }
 
-                return extractContent(response.body());
+                String fullBody = response.body();
+                String content  = extractContent(fullBody);
+                return new LLMRawResult(content, fullBody);
             });
     }
 

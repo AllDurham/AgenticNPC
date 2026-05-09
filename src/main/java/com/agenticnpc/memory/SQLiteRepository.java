@@ -67,9 +67,68 @@ public class SQLiteRepository implements MemoryRepository {
                 ON chat_history (player_uuid, brain_id, created_at)
                 """);
 
+            // ---- 审计日志表 ----
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp_ms INTEGER NOT NULL,
+                    player_uuid  TEXT    NOT NULL,
+                    player_name  TEXT    NOT NULL,
+                    brain_id     TEXT    NOT NULL,
+                    event_type   TEXT    NOT NULL,
+                    input        TEXT,
+                    output       TEXT,
+                    action_type  TEXT,
+                    action_params TEXT,
+                    server_id    TEXT    NOT NULL DEFAULT 'default'
+                )
+                """);
+
+            stmt.execute("""
+                CREATE INDEX IF NOT EXISTS idx_audit_player
+                ON audit_log (player_uuid, timestamp_ms)
+                """);
+
+            stmt.execute("""
+                CREATE INDEX IF NOT EXISTS idx_audit_time
+                ON audit_log (timestamp_ms)
+                """);
+
+            // ---- Token 统计表 ----
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS token_usage (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp_ms     INTEGER NOT NULL,
+                    player_uuid      TEXT    NOT NULL,
+                    player_name      TEXT    NOT NULL,
+                    brain_id         TEXT    NOT NULL,
+                    prompt_tokens    INTEGER NOT NULL DEFAULT 0,
+                    completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    total_tokens     INTEGER NOT NULL DEFAULT 0,
+                    server_id        TEXT    NOT NULL DEFAULT 'default'
+                )
+                """);
+
+            stmt.execute("""
+                CREATE INDEX IF NOT EXISTS idx_token_player
+                ON token_usage (player_uuid, timestamp_ms)
+                """);
+
+            stmt.execute("""
+                CREATE INDEX IF NOT EXISTS idx_token_brain
+                ON token_usage (brain_id, timestamp_ms)
+                """);
+
         } catch (SQLException e) {
             throw new RuntimeException("[数据库] SQLite Schema 初始化失败", e);
         }
+    }
+
+    /**
+     * 供 TokenTracker / AuditLogger 获取数据库连接。
+     */
+    public java.sql.Connection getConnection() throws SQLException {
+        return dataSource.getConnection();
     }
 
     @Override

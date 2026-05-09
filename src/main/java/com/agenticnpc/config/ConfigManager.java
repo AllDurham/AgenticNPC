@@ -146,6 +146,34 @@ public class ConfigManager {
             .orElse(Set.of());
     }
 
+    // ---- 服务器标识 ----
+    public String getServerId() {
+        return config.getString("server-id", "default");
+    }
+
+    // ---- Token 告警 ----
+    public int getTokenAlertThreshold() {
+        return config.getInt("token-alert.single-request-threshold", 0);
+    }
+
+    public int getDailyPlayerTokenThreshold() {
+        return config.getInt("token-alert.daily-player-threshold", 0);
+    }
+
+    // ---- 审计日志 ----
+    public boolean isAuditEnabled() {
+        return config.getBoolean("audit.enabled", true);
+    }
+
+    public int getAuditRetentionDays() {
+        return config.getInt("audit.retention-days", 30);
+    }
+
+    // ---- BungeeCord 同步 ----
+    public int getBungeecordSyncIntervalSeconds() {
+        return config.getInt("rate-limit.bungeecord-sync-interval-seconds", 30);
+    }
+
     // ---- Brain 配置 ----
     public Optional<BrainConfig> getBrainConfig(String brainId) {
         return Optional.ofNullable(brainConfigMap.get(brainId));
