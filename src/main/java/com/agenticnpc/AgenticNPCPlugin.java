@@ -134,6 +134,7 @@ public class AgenticNPCPlugin extends JavaPlugin {
         if (configManager.isAuditEnabled()) {
             auditLogger = new AuditLogger(configManager, getDataFolder(), getLogger());
             asyncDispatcher.setAuditLogger(auditLogger);
+            actionExecutor.setAuditLogger(auditLogger);
             // S4-E1: 审计日志自动清理
             if (configManager.isAuditAutoCleanup()) {
                 auditLogger.startCleanupTask(this);

@@ -1,5 +1,6 @@
 package com.agenticnpc.executor;
 
+import com.agenticnpc.audit.AuditLogger;
 import com.agenticnpc.config.BrainConfig;
 import com.agenticnpc.config.ConfigManager;
 import com.agenticnpc.dispatch.AsyncDispatcher.ExecutionCallback;
@@ -58,6 +59,7 @@ public class ActionExecutor implements ExecutionCallback {
     private final TeleportGuard  teleportGuard;
     private final PotionGuard    potionGuard;
     private final Logger         logger;
+    private AuditLogger          auditLogger;
 
     public ActionExecutor(ConfigManager config,
                           TeleportGuard teleportGuard,
@@ -67,6 +69,10 @@ public class ActionExecutor implements ExecutionCallback {
         this.teleportGuard = teleportGuard;
         this.potionGuard   = potionGuard;
         this.logger        = logger;
+    }
+
+    public void setAuditLogger(AuditLogger auditLogger) {
+        this.auditLogger = auditLogger;
     }
 
     @Override
@@ -261,6 +267,10 @@ public class ActionExecutor implements ExecutionCallback {
             subtitle = subtitle.substring(0, InputSanitizer.MAX_SUBTITLE_LENGTH);
         }
 
+        // 剥离截断后可能遗留的孤立 § 颜色代码标记
+        title = stripOrphanColorCode(title);
+        if (subtitle != null) subtitle = stripOrphanColorCode(subtitle);
+
         // 截断时长参数到 [0, 200]
         int fadeIn  = clampInt(params.title_fade_in()  != null ? params.title_fade_in()  : 10, 0, 200);
         int stay    = clampInt(params.title_stay()     != null ? params.title_stay()     : 60, 0, 200);
@@ -271,6 +281,13 @@ public class ActionExecutor implements ExecutionCallback {
         logger.info(String.format(
             "[ActionExecutor] SEND_TITLE | 玩家: %s | 主标题: %s | 副标题: %s | Brain: %s",
             player.getName(), title, subtitle != null ? subtitle : "-", brain.id()));
+
+        if (auditLogger != null) {
+            auditLogger.logDialogueSuccess(
+                player.getUniqueId(), player.getName(), brain.id(),
+                "SEND_TITLE: " + title + " / " + (subtitle != null ? subtitle : "-"),
+                null, ActionType.SEND_TITLE, null);
+        }
     }
 
     // ================================================================
@@ -303,6 +320,13 @@ public class ActionExecutor implements ExecutionCallback {
         logger.info(String.format(
             "[ActionExecutor] PLAY_SOUND | 玩家: %s | 音效: %s | 音量: %.1f | 音调: %.1f | Brain: %s",
             player.getName(), soundName, volume, pitch, brain.id()));
+
+        if (auditLogger != null) {
+            auditLogger.logDialogueSuccess(
+                player.getUniqueId(), player.getName(), brain.id(),
+                "PLAY_SOUND: " + soundName + " vol=" + volume + " pitch=" + pitch,
+                null, ActionType.PLAY_SOUND, soundName);
+        }
     }
 
     /**
@@ -351,6 +375,16 @@ public class ActionExecutor implements ExecutionCallback {
                 player.getName(), actual, brain.id()));
             player.sendMessage("§7[你获得了 " + actual + " 点经验值]");
         }
+
+        if (auditLogger != null) {
+            String detail = truncated
+                ? "GIVE_XP: " + requested + " -> " + actual + "（截断到上限 " + maxXp + "）"
+                : "GIVE_XP: " + actual;
+            auditLogger.logDialogueSuccess(
+                player.getUniqueId(), player.getName(), brain.id(),
+                detail, null, ActionType.GIVE_XP,
+                truncated ? requested + "->" + actual : String.valueOf(actual));
+        }
     }
 
     // ================================================================
@@ -363,5 +397,20 @@ public class ActionExecutor implements ExecutionCallback {
 
     private static double clampDouble(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    /**
+     * 剥离字符串末尾孤立的 § 颜色代码标记。
+     * 截断可能导致 "§e你好" 被截为 "§e你"（安全），
+     * 但 "§" 本身被截为 "§"（孤立，Minecraft 会吞掉下一个字符）。
+     * 同时剥离末尾不完整的 "§X" 模式（§ 后无有效字符的情况极少但防御性处理）。
+     */
+    private static String stripOrphanColorCode(String s) {
+        if (s == null || s.isEmpty()) return s;
+        // 末尾孤立 §
+        if (s.endsWith("§")) {
+            s = s.substring(0, s.length() - 1);
+        }
+        return s;
     }
 }
