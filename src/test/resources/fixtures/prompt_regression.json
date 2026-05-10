@@ -1,0 +1,86 @@
+[
+  {
+    "description": "正常对话（NONE）",
+    "llm_output": "{\"dialogue\":\"你好，旅行者。今天风和日丽，适合出发。\",\"action_type\":\"NONE\",\"action_parameters\":null,\"emotion_change\":\"NONE\"}",
+    "expected_action": "NONE",
+    "expected_dialogue_contains": "旅行者"
+  },
+  {
+    "description": "GIVE_ITEM 给面包",
+    "llm_output": "{\"dialogue\":\"给你一些面包，路上小心。\",\"action_type\":\"GIVE_ITEM\",\"action_parameters\":{\"item_id\":\"BREAD\",\"amount\":3},\"emotion_change\":\"NONE\"}",
+    "expected_action": "GIVE_ITEM",
+    "expected_dialogue_contains": "面包"
+  },
+  {
+    "description": "GIVE_ITEM 给钻石（白名单内）",
+    "llm_output": "{\"dialogue\":\"这颗钻石送你。\",\"action_type\":\"GIVE_ITEM\",\"action_parameters\":{\"item_id\":\"DIAMOND\",\"amount\":1},\"emotion_change\":\"UPGRADE\"}",
+    "expected_action": "GIVE_ITEM",
+    "expected_dialogue_contains": "钻石"
+  },
+  {
+    "description": "TELEPORT 传送",
+    "llm_output": "{\"dialogue\":\"空间的涟漪开始波动...\",\"action_type\":\"TELEPORT\",\"action_parameters\":{\"world\":\"world\",\"x\":100.0,\"y\":64.0,\"z\":-200.0},\"emotion_change\":\"NONE\"}",
+    "expected_action": "TELEPORT",
+    "expected_dialogue_contains": "涟漪"
+  },
+  {
+    "description": "GIVE_EFFECT 治疗",
+    "llm_output": "{\"dialogue\":\"治愈之力与你同在。\",\"action_type\":\"GIVE_EFFECT\",\"action_parameters\":{\"effect_name\":\"HEAL\",\"duration_seconds\":30,\"amplifier\":0},\"emotion_change\":\"NONE\"}",
+    "expected_action": "GIVE_EFFECT",
+    "expected_dialogue_contains": "治愈"
+  },
+  {
+    "description": "SEND_TITLE 发送标题",
+    "llm_output": "{\"dialogue\":\"看这里！\",\"action_type\":\"SEND_TITLE\",\"action_parameters\":{\"title_text\":\"§e欢迎来到村庄\",\"title_subtitle\":\"§7这里是最安全的港湾\",\"title_fade_in\":10,\"title_stay\":60,\"title_fade_out\":20},\"emotion_change\":\"NONE\"}",
+    "expected_action": "SEND_TITLE",
+    "expected_dialogue_contains": "看"
+  },
+  {
+    "description": "PLAY_SOUND 播放音效",
+    "llm_output": "{\"dialogue\":\"听听这个声音。\",\"action_type\":\"PLAY_SOUND\",\"action_parameters\":{\"sound_name\":\"ENTITY_VILLAGER_HAPPY\",\"sound_volume\":1.0,\"sound_pitch\":1.0},\"emotion_change\":\"NONE\"}",
+    "expected_action": "PLAY_SOUND",
+    "expected_dialogue_contains": "声音"
+  },
+  {
+    "description": "GIVE_XP 给经验",
+    "llm_output": "{\"dialogue\":\"这些经验传授给你。\",\"action_type\":\"GIVE_XP\",\"action_parameters\":{\"xp_amount\":50},\"emotion_change\":\"NONE\"}",
+    "expected_action": "GIVE_XP",
+    "expected_dialogue_contains": "经验"
+  },
+  {
+    "description": "Markdown 包裹的 JSON",
+    "llm_output": "```json\n{\"dialogue\":\"流浪者，你好。\",\"action_type\":\"NONE\",\"action_parameters\":null}\n```",
+    "expected_action": "NONE",
+    "expected_dialogue_contains": "流浪者"
+  },
+  {
+    "description": "emotion_change=UPGRADE",
+    "llm_output": "{\"dialogue\":\"你真善良，我很感动。\",\"action_type\":\"NONE\",\"action_parameters\":null,\"emotion_change\":\"UPGRADE\"}",
+    "expected_action": "NONE",
+    "expected_dialogue_contains": "感动"
+  },
+  {
+    "description": "emotion_change=DOWNGRADE",
+    "llm_output": "{\"dialogue\":\"你让我很失望。\",\"action_type\":\"NONE\",\"action_parameters\":null,\"emotion_change\":\"DOWNGRADE\"}",
+    "expected_action": "NONE",
+    "expected_dialogue_contains": "失望"
+  },
+  {
+    "description": "action_parameters 为 null 时 GIVE_ITEM 被 validator 降级",
+    "llm_output": "{\"dialogue\":\"我本想给你东西，但算了。\",\"action_type\":\"GIVE_ITEM\",\"action_parameters\":null,\"emotion_change\":\"NONE\"}",
+    "expected_action": "NONE",
+    "expected_dialogue_contains": null
+  },
+  {
+    "description": "TELEPORT 缺少坐标参数（Validator 不检查子字段，放行；Executor 会跳过）",
+    "llm_output": "{\"dialogue\":\"传送失败...\",\"action_type\":\"TELEPORT\",\"action_parameters\":{\"world\":\"world\"},\"emotion_change\":\"NONE\"}",
+    "expected_action": "TELEPORT",
+    "expected_dialogue_contains": null
+  },
+  {
+    "description": "对话内容含引号和特殊字符",
+    "llm_output": "{\"dialogue\":\"他说：\\\"你好！\\\" 然后转身离开了。\",\"action_type\":\"NONE\",\"action_parameters\":null,\"emotion_change\":\"NONE\"}",
+    "expected_action": "NONE",
+    "expected_dialogue_contains": "你好"
+  }
+]

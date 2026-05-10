@@ -2,13 +2,13 @@ package com.agenticnpc.audit;
 
 import com.agenticnpc.config.ConfigManager;
 import com.agenticnpc.model.ActionType;
+import com.google.gson.Gson;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -61,6 +61,7 @@ public class AuditLogger {
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd");
     private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm:ss.SSS");
+    private static final Gson GSON = new Gson();
 
     public AuditLogger(ConfigManager config, File dataFolder, Logger logger) {
         this.config = config;
@@ -236,15 +237,24 @@ public class AuditLogger {
         }
     }
 
+    /**
+     * 构建结构化 JSON 日志行。
+     * 每行一个 JSON 对象（JSONL 格式），便于 Web 面板解析。
+     */
     private String buildLogLine(AuditEntry e) {
-        String time   = TIME_FORMAT.format(new Date(e.timestampMs()));
-        String input  = e.input()  != null ? e.input()  : "-";
-        String output = e.output() != null ? e.output() : "-";
-        String action = e.actionType() != null ? e.actionType().name() : "NONE";
-
-        return String.format("[%s] [%s] [%s/%s] IN: %s | OUT: %s | ACTION: %s | SERVER: %s",
-            time, e.eventType().name(), e.playerName(), e.brainId(),
-            input, output, action, e.serverId());
+        Map<String, Object> json = new LinkedHashMap<>();
+        json.put("timestamp", e.timestampMs());
+        json.put("time", TIME_FORMAT.format(new Date(e.timestampMs())));
+        json.put("event_type", e.eventType().name());
+        json.put("player_uuid", e.playerUuid());
+        json.put("player_name", e.playerName());
+        json.put("brain_id", e.brainId());
+        json.put("input", e.input());
+        json.put("output", e.output());
+        json.put("action_type", e.actionType() != null ? e.actionType().name() : "NONE");
+        json.put("action_params", e.actionParams());
+        json.put("server_id", e.serverId());
+        return GSON.toJson(json);
     }
 
     private String truncate(String s, int maxLen) {
