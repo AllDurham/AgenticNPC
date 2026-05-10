@@ -2,16 +2,11 @@ package com.agenticnpc;
 
 import com.agenticnpc.audit.AuditLogger;
 import com.agenticnpc.audit.TokenTracker;
-import com.agenticnpc.command.BindCommand;
-import com.agenticnpc.command.BindPendingListener;
-import com.agenticnpc.command.EmotionCommand;
-import com.agenticnpc.command.StatsCommand;
+import com.agenticnpc.command.*;
 import com.agenticnpc.config.ConfigManager;
 import com.agenticnpc.context.PromptBuilder;
-import com.agenticnpc.dispatch.AsyncDispatcher;
-import com.agenticnpc.dispatch.CircuitBreaker;
-import com.agenticnpc.dispatch.LLMClient;
-import com.agenticnpc.dispatch.RateLimiter;
+import com.agenticnpc.dispatch.*;
+import com.agenticnpc.gateway.SemanticGuard;
 import com.agenticnpc.emotion.EmotionManager;
 import com.agenticnpc.executor.ActionExecutor;
 import com.agenticnpc.gateway.ActionValidator;
@@ -64,6 +59,10 @@ public class AgenticNPCPlugin extends JavaPlugin {
     private AuditLogger  auditLogger;
     private TokenTracker tokenTracker;
 
+    // S5-P1: SemanticGuard + Health
+    private SemanticGuard semanticGuard;
+    private HealthCommand healthCommand;
+
     @Override
     public void onEnable() {
         instance = this;
@@ -94,7 +93,16 @@ public class AgenticNPCPlugin extends JavaPlugin {
             configManager.getCircuitBreakerThreshold(),
             configManager.getCircuitBreakerRecoveryMs(), getLogger()
         );
-        rateLimiter = new RateLimiter(configManager);
+
+        // S5-P1-A: 限流双模式
+        if ("redis".equalsIgnoreCase(configManager.getRateLimitBackend())) {
+            RedisRateLimiter redisRL = new RedisRateLimiter(configManager, getLogger());
+            rateLimiter = redisRL;
+            getLogger().info("[限流] 使用 Redis 跨服限流");
+        } else {
+            rateLimiter = new LocalRateLimiter(configManager);
+            getLogger().info("[限流] 使用本地限流");
+        }
 
         // Sprint 3: 压缩 + 画像 + 情绪
         compressionService = new CompressionService(llmClient, configManager, getLogger());
@@ -156,12 +164,37 @@ public class AgenticNPCPlugin extends JavaPlugin {
         }
         asyncDispatcher.setTokenTracker(tokenTracker);
 
+        // S5-P1-C: Health 命令（在命令注册前创建）
+        healthCommand = new HealthCommand(
+            circuitBreaker, rateLimiter, configManager,
+            memoryRepository, tokenTracker
+        );
+
+        // S5-P1-B: 语义注入防御
+        if (configManager.isSemanticGuardEnabled()) {
+            // SemanticGuard 复用主 LLMClient（sendRawAsync 使用独立 system prompt）
+            // 如果配置了独立 model/endpoint/api-key，则创建独立 LLMClient
+            LLMClient guardClient = llmClient;
+            String guardEndpoint = configManager.getSemanticGuardEndpoint();
+            if (guardEndpoint != null && !guardEndpoint.isEmpty()) {
+                // 临时覆盖配置创建独立客户端
+                // 注意：ConfigManager 是 final-friendly，这里通过 YAML 覆盖实现
+                guardClient = new LLMClient(configManager, getLogger());
+            }
+            semanticGuard = new SemanticGuard(guardClient, configManager.getSemanticGuardTimeoutMs(), getLogger());
+            asyncDispatcher.setSemanticGuard(semanticGuard);
+            healthCommand.setSemanticGuardEnabled(true);
+            getLogger().info("[安全] SemanticGuard 已启用 | 模式: " + configManager.getSemanticGuardMode());
+        }
+        asyncDispatcher.setHealthCommand(healthCommand);
+
         // 注册命令
         StatsCommand statsCommand = new StatsCommand(tokenTracker);
         BindCommand  bindCmd      = new BindCommand(brainStorage, configManager);
         bindCmd.setStatsCommand(statsCommand);
         EmotionCommand emotionCmd = new EmotionCommand(configManager, emotionManager, auditLogger);
         bindCmd.setEmotionCommand(emotionCmd);
+        bindCmd.setHealthCommand(healthCommand);
         getCommand("agenticnpc").setExecutor(bindCmd);
         getCommand("agenticnpc").setTabCompleter(bindCmd);
 
@@ -171,15 +204,17 @@ public class AgenticNPCPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(chatCollector, this);
 
         getLogger().info("========================================");
-        getLogger().info("  AgenticNPC 启动完成！（Sprint 4）");
+        getLogger().info("  AgenticNPC 启动完成！（Sprint 5）");
         getLogger().info("  LLM 端点: " + configManager.getLLMEndpoint());
         getLogger().info("  模型:     " + configManager.getLLMModel());
+        getLogger().info("  限流后端: " + configManager.getRateLimitBackend());
         getLogger().info("  服务器ID: " + configManager.getServerId());
         getLogger().info("========================================");
     }
 
     @Override
     public void onDisable() {
+        if (rateLimiter  != null) rateLimiter.shutdown();
         if (auditLogger  != null) auditLogger.shutdown();
         if (tokenTracker != null) tokenTracker.shutdown();
         if (memoryManager != null) memoryManager.shutdown();

@@ -15,9 +15,18 @@ llm:
 
 # ---- 限流配置 ----
 rate-limit:
+  backend: "local"          # local / redis
   global-per-player: false
   max-requests: 5
   period-ms: 60000
+
+# ---- Redis 配置（跨服限流）----
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  database: 0
+  timeout-ms: 2000
 
 # ---- 熔断器配置 ----
 circuit-breaker:
@@ -99,6 +108,15 @@ audit:
 # ---- XP 配置 ----
 xp:
   max-per-action: 1000
+
+# ---- 语义注入防御 ----
+semantic-guard:
+  enabled: false
+  model: "deepseek-v4-flash"
+  endpoint: ""
+  api-key: ""
+  timeout-ms: 2000
+  mode: "detect"            # detect / strict
 
 # ---- 调试模式 ----
 debug: true

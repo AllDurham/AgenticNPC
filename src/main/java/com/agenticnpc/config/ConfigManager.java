@@ -117,9 +117,17 @@ public class ConfigManager {
     public int    getReadTimeoutMs()    { return config.getInt("llm.timeout.read-ms", 8000); }
 
     // ---- 限流配置 ----
-    public boolean isGlobalRateLimit()    { return config.getBoolean("rate-limit.global-per-player", false); }
-    public int     getRateLimitMax()      { return config.getInt("rate-limit.max-requests", 5); }
-    public long    getRateLimitPeriodMs() { return config.getLong("rate-limit.period-ms", 60000); }
+    public boolean isGlobalRateLimit()       { return config.getBoolean("rate-limit.global-per-player", false); }
+    public int     getRateLimitMax()         { return config.getInt("rate-limit.max-requests", 5); }
+    public long    getRateLimitPeriodMs()    { return config.getLong("rate-limit.period-ms", 60000); }
+    public String  getRateLimitBackend()     { return config.getString("rate-limit.backend", "local"); }
+
+    // ---- Redis 配置 ----
+    public String  getRedisHost()            { return config.getString("redis.host", "localhost"); }
+    public int     getRedisPort()            { return config.getInt("redis.port", 6379); }
+    public String  getRedisPassword()        { return config.getString("redis.password", ""); }
+    public int     getRedisDatabase()        { return config.getInt("redis.database", 0); }
+    public int     getRedisTimeoutMs()       { return config.getInt("redis.timeout-ms", 2000); }
 
     // ---- 熔断器配置 ----
     public int  getCircuitBreakerThreshold()  { return config.getInt("circuit-breaker.failure-threshold", 5); }
@@ -211,6 +219,14 @@ public class ConfigManager {
 
     // ---- XP 配置 ----
     public int getXpMaxPerAction()                  { return config.getInt("xp.max-per-action", 1000); }
+
+    // ---- SemanticGuard 配置 ----
+    public boolean isSemanticGuardEnabled()         { return config.getBoolean("semantic-guard.enabled", false); }
+    public String  getSemanticGuardModel()          { return config.getString("semantic-guard.model", ""); }
+    public String  getSemanticGuardEndpoint()       { return config.getString("semantic-guard.endpoint", ""); }
+    public String  getSemanticGuardApiKey()         { return config.getString("semantic-guard.api-key", ""); }
+    public int     getSemanticGuardTimeoutMs()      { return config.getInt("semantic-guard.timeout-ms", 2000); }
+    public String  getSemanticGuardMode()           { return config.getString("semantic-guard.mode", "detect"); }
 
     // ---- Brain 配置 ----
     public Optional<BrainConfig> getBrainConfig(String brainId) {

@@ -34,7 +34,9 @@ public class AuditLogger {
         INJECTION_ATTEMPT,
         RATE_LIMITED,
         CIRCUIT_OPEN,
-        PARSE_FAILED
+        PARSE_FAILED,
+        SEMANTIC_GUARD_SUSPICIOUS,
+        SEMANTIC_GUARD_BLOCKED
     }
 
     public record AuditEntry(
@@ -141,6 +143,26 @@ public class AuditLogger {
             EventType.CIRCUIT_OPEN,
             null, "熔断器打开，连续失败次数: " + failureCount,
             null, null, config.getServerId()
+        ));
+    }
+
+    public void logSemanticGuardSuspicious(UUID playerId, String playerName,
+                                            String brainId, String input) {
+        enqueue(new AuditEntry(
+            System.currentTimeMillis(),
+            playerId.toString(), playerName, brainId,
+            EventType.SEMANTIC_GUARD_SUSPICIOUS,
+            truncate(input, 500), null, null, null, config.getServerId()
+        ));
+    }
+
+    public void logSemanticGuardBlocked(UUID playerId, String playerName,
+                                         String brainId, String input) {
+        enqueue(new AuditEntry(
+            System.currentTimeMillis(),
+            playerId.toString(), playerName, brainId,
+            EventType.SEMANTIC_GUARD_BLOCKED,
+            truncate(input, 500), null, null, null, config.getServerId()
         ));
     }
 

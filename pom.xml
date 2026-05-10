@@ -85,6 +85,14 @@
             <scope>compile</scope>
         </dependency>
 
+        <!-- Jedis：Redis 客户端（跨服限流） -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>5.2.0</version>
+            <scope>compile</scope>
+        </dependency>
+
         <!-- Citizens API（provided，运行时由服务器提供） -->
         <dependency>
             <groupId>net.citizensnpcs</groupId>
@@ -176,6 +184,14 @@
                                 <relocation>
                                     <pattern>com.mysql</pattern>
                                     <shadedPattern>com.agenticnpc.libs.mysql</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>redis.clients</pattern>
+                                    <shadedPattern>com.agenticnpc.libs.jedis</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.apache.commons.pool2</pattern>
+                                    <shadedPattern>com.agenticnpc.libs.pool2</shadedPattern>
                                 </relocation>
                             </relocations>
                             <filters>

@@ -10,6 +10,7 @@ import com.agenticnpc.gateway.ItemSafetyGuard;
 import com.agenticnpc.gateway.LLMResponseParser;
 import com.agenticnpc.gateway.model.ItemSafetyResult;
 import com.agenticnpc.gateway.model.ValidationResult;
+import com.agenticnpc.gateway.SemanticGuard;
 import com.agenticnpc.hook.ChatCollector;
 import com.agenticnpc.memory.MemoryManager;
 import com.agenticnpc.model.*;
@@ -44,6 +45,8 @@ public class AsyncDispatcher implements InteractionPipeline {
     private ExecutionCallback executionCallback;
     private AuditLogger      auditLogger;
     private TokenTracker     tokenTracker;
+    private SemanticGuard    semanticGuard;
+    private com.agenticnpc.command.HealthCommand healthCommand;
 
     public AsyncDispatcher(
             RateLimiter       rateLimiter,
@@ -92,6 +95,14 @@ public class AsyncDispatcher implements InteractionPipeline {
         this.llmClient = llmClient;
     }
 
+    public void setSemanticGuard(SemanticGuard semanticGuard) {
+        this.semanticGuard = semanticGuard;
+    }
+
+    public void setHealthCommand(com.agenticnpc.command.HealthCommand healthCommand) {
+        this.healthCommand = healthCommand;
+    }
+
     public CircuitBreaker getCircuitBreaker() {
         return circuitBreaker;
     }
@@ -127,6 +138,35 @@ public class AsyncDispatcher implements InteractionPipeline {
             return;
         }
 
+        // ---- Step 1.5: 语义注入防御 ----
+        if (semanticGuard != null) {
+            var verdict = semanticGuard.check(event.sanitizedInput());
+            switch (verdict) {
+                case BLOCKED -> {
+                    logger.warning("[Dispatcher][SemanticGuard] BLOCKED | 玩家: " + player.getName());
+                    if (auditLogger != null) {
+                        auditLogger.logSemanticGuardBlocked(
+                            player.getUniqueId(), player.getName(), brainId, event.sanitizedInput());
+                    }
+                    if (healthCommand != null) healthCommand.recordError();
+                    syncToMain(() ->
+                        player.sendMessage("§7[" + brain.name() + "] §e输入被安全系统拦截。")
+                    );
+                    restoreListening(event);
+                    return;
+                }
+                case SUSPICIOUS -> {
+                    logger.warning("[Dispatcher][SemanticGuard] SUSPICIOUS | 玩家: " + player.getName());
+                    if (auditLogger != null) {
+                        auditLogger.logSemanticGuardSuspicious(
+                            player.getUniqueId(), player.getName(), brainId, event.sanitizedInput());
+                    }
+                    // 不拦截，继续执行
+                }
+                case SAFE -> { /* 正常继续 */ }
+            }
+        }
+
         // ---- Step 2: 构建 Prompt ----
         PromptPackage promptPackage;
         try {
@@ -149,6 +189,7 @@ public class AsyncDispatcher implements InteractionPipeline {
                     auditLogger.logParseFailed(player.getUniqueId(), player.getName(),
                         brainId, throwable.getMessage());
                 }
+                if (healthCommand != null) healthCommand.recordError();
                 sendFallback(player, brain);
                 restoreListening(event);
                 return;
@@ -158,6 +199,7 @@ public class AsyncDispatcher implements InteractionPipeline {
                 if (auditLogger != null) {
                     auditLogger.logCircuitOpen(brainId, 0);
                 }
+                if (healthCommand != null) healthCommand.recordError();
                 sendFallback(player, brain);
                 restoreListening(event);
                 return;
