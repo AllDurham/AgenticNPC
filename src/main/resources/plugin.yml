@@ -4,7 +4,9 @@ main: com.agenticnpc.AgenticNPCPlugin
 api-version: "1.13"
 description: AI-powered NPC middleware for Minecraft
 author: AgenticNPC Team
-
+softdepend:
+  - MythicMobs
+  - Citizens
 commands:
   agenticnpc:
     description: AgenticNPC 主命令
