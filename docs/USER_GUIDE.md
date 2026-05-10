@@ -4,6 +4,95 @@
 
 ---
 
+## 插件特色
+
+### AI 驱动的 NPC 对话
+
+- 接入 OpenAI 兼容 API（DeepSeek / OpenAI / 中转站）
+- 每个 NPC 独立人格、记忆、情绪，互不干扰
+- 对话历史自动压缩为摘要，长期运行不爆 Token
+- 管理员可为每个玩家设定永久画像，NPC 据此调整态度
+
+### 7 种动作类型
+
+| 动作 | 说明 |
+|------|------|
+| `GIVE_ITEM` | 给予物品（白名单 + 跨版本 Material 映射） |
+| `TELEPORT` | 传送（WorldGuard 领地检查 + Y 坐标安全） |
+| `GIVE_EFFECT` | 药水效果（白名单 + 时长/等级截断） |
+| `SEND_TITLE` | 游戏内标题（长度截断 + §颜色代码安全） |
+| `PLAY_SOUND` | 音效播放（sound-whitelist + 跨版本别名映射） |
+| `GIVE_XP` | 经验值（单次上限截断 + 审计标记） |
+
+### 六层纵深安全防御
+
+```
+玩家输入
+  │
+  ▼
+Layer 1 ─ InputSanitizer 输入清洗
+  │  • 长度截断（100 字符）
+  │  • 注入模式正则匹配（6 类攻击签名）
+  │  • 标签逃逸闭合符剥离（</user_input> 破坏）
+  │  • Unicode NFKC 规范化（防同形字攻击）
+  │  • 控制字符过滤
+  │
+  ▼
+Layer 2 ─ SemanticGuard 语义审核（可选）
+  │  • 独立 LLM 二次审核，不暴露主 System Prompt
+  │  • 识别 Prompt 注入、越权诱导、jailbreak、系统探测
+  │  • 三种判定：SAFE / SUSPICIOUS（记录不拦截）/ BLOCKED（拒绝）
+  │  • 超时/异常自动 fail-open（不阻塞正常对话）
+  │
+  ▼
+Layer 3 ─ PromptBuilder XML 隔离
+  │  • 用户输入包裹在 <user_input> 标签内
+  │  • 与 System Prompt 物理隔离，防止指令泄漏
+  │
+  ▼
+Layer 4 ─ ActionValidator 动作校验
+  │  • action_type 白名单校验（每个 Brain 独立配置）
+  │  • 参数完整性检查
+  │  • sound-whitelist 音效白名单
+  │  • GIVE_XP 数量有效性
+  │  • 未知动作类型自动降级为 NONE
+  │
+  ▼
+Layer 5 ─ 专项安全守卫
+  │  • ItemSafetyGuard：Material 解析 + 白名单 + 数量截断 + 跨版本别名
+  │  • TeleportGuard：WorldGuard 领地白名单/黑名单
+  │  • PotionGuard：药水效果白名单 + 时长/等级安全截断
+  │
+  ▼
+Layer 6 ─ ActionExecutor 执行前截断
+     • SEND_TITLE 标题/副标题长度截断 + §孤立标记剥离
+     • SEND_TITLE 时长参数 [0, 200] ticks 裁剪
+     • GIVE_XP 超限截断（审计日志标记原始值与实际值）
+     • PLAY_SOUND 音量 [0.0, 2.0] / 音调 [0.5, 2.0] 裁剪
+     • 所有动作执行均写入结构化审计日志
+```
+
+### 多服部署支持
+
+- **Redis 跨服限流**：多服共享限流状态，Lua 原子操作，Redis 不可用时自动降级
+- **MySQL 后端**：对话/画像/情绪/审计全量持久化，utf8mb4 字符集
+- **服务器标识**：`server-id` 区分子服，审计日志和 Token 统计按服归属
+
+### 可观测性
+
+- `/anpc health`：一键查看熔断状态、限流后端、Redis 状态、Token 消耗、错误计数
+- 结构化审计日志（JSONL 格式）：每行一个 JSON，Web 面板可直接解析
+- Token 告警：单次请求 / 每日玩家消耗超阈值自动告警
+- 审计日志自动清理：按日期轮转，可配置保留天数
+
+### 测试与质量
+
+- 93 个单元测试（JUnit 5 + Mockito）
+- Prompt 回归测试（JSON fixture 驱动，防止人格漂移）
+- GitHub Actions CI（build → test → package）
+
+---
+
 ## 5 分钟快速上手
 
 ### 第一步：安装插件
