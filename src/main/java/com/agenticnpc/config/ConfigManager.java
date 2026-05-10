@@ -142,6 +142,7 @@ public class ConfigManager {
     public boolean isInventoryContextEnabled() { return config.getBoolean("context.inventory-enabled", true); }
     public boolean isActionBarEnabled()        { return config.getBoolean("render.action-bar-enabled", true); }
     public boolean isSoundEnabled()            { return config.getBoolean("render.sound-enabled", true); }
+    public boolean isChatEchoEnabled()         { return config.getBoolean("chat.echo-player-message", true); }
     public String  getFallbackDialogue()       { return config.getString("fallback.dialogue", "..."); }
     public boolean isDebugMode()               { return config.getBoolean("debug", false); }
 

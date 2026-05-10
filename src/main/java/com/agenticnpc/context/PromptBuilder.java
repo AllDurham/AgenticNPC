@@ -209,7 +209,10 @@ public class PromptBuilder {
 
         // ---- 输出格式约束（最重要的部分，放在最后强化记忆）----
         sb.append("【输出格式（严格遵守）】\n");
-        sb.append("你必须且只能以如下 JSON 格式回复，绝对不能包含任何其他内容：\n");
+        sb.append("你的整个回复必须且只能是一个 JSON 对象，前后禁止任何文字。\n");
+        sb.append("禁止在 JSON 前输出角色动作描写、语气词或任何非 JSON 文字。\n");
+        sb.append("禁止使用 markdown 代码块（```json）。\n");
+        sb.append("所有角色动作、语气描写必须写入 dialogue 字段内。\n\n");
 
         // 动态构建 action_type 可选值
         StringBuilder actionValues = new StringBuilder("NONE");
@@ -220,9 +223,11 @@ public class PromptBuilder {
         if (hasPlaySound) actionValues.append(", PLAY_SOUND");
         if (hasGiveXp)    actionValues.append(", GIVE_XP");
 
+        sb.append("action_type 可选值：[").append(actionValues).append("]\n\n");
+
         sb.append("{\n");
-        sb.append("  \"dialogue\": \"NPC 说的话（必填，不超过100字）\",\n");
-        sb.append("  \"action_type\": \"").append(actionValues).append("（必填）\",\n");
+        sb.append("  \"dialogue\": \"NPC 说的话（必填，不超过100字，角色动作描写也写在这里）\",\n");
+        sb.append("  \"action_type\": \"\",\n");
         sb.append("  \"action_parameters\": {\n");
 
         // 动态构建参数说明
@@ -274,6 +279,13 @@ public class PromptBuilder {
             sb.append("sound_name 必须使用配置白名单中的音效枚举名，不可自行编造。\n");
         }
         sb.append("如果不确定参数，将 action_type 设为 NONE，不要猜测。\n\n");
+
+        // 错误/正确示例
+        sb.append("错误示例（禁止）：\n");
+        sb.append("  （微笑着看了你一眼）\n");
+        sb.append("  { \"dialogue\": \"...\", ... }\n");
+        sb.append("正确示例：\n");
+        sb.append("  { \"dialogue\": \"（微笑着看了你一眼）你好。\", ... }\n\n");
 
         // ---- 绝对约束（放在最后，强化模型记忆）----
         sb.append("【绝对约束】\n");

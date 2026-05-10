@@ -201,4 +201,83 @@ class LLMResponseParserTest {
         assertEquals(com.agenticnpc.emotion.EmotionChange.UPGRADE,
             result.get().getEmotionChange());
     }
+
+    // ---- JSON 提取（前缀/后缀文本污染）----
+
+    @Nested
+    @DisplayName("JSON 提取：前缀/后缀文本")
+    class JsonExtraction {
+
+        @Test
+        @DisplayName("前缀角色文本 + JSON → 正确提取")
+        void prefixTextThenJson() {
+            String input = "（略微打量了你一眼）\n{\"dialogue\":\"你好旅行者\",\"action_type\":\"NONE\"}";
+            Optional<LLMResponse> result = parser.parse(input);
+            assertTrue(result.isPresent());
+            assertEquals("你好旅行者", result.get().dialogue());
+        }
+
+        @Test
+        @DisplayName("JSON + 后缀文本 → 正确提取")
+        void jsonThenSuffixText() {
+            String input = "{\"dialogue\":\"再见\",\"action_type\":\"NONE\"}\n祝你旅途愉快。";
+            Optional<LLMResponse> result = parser.parse(input);
+            assertTrue(result.isPresent());
+            assertEquals("再见", result.get().dialogue());
+        }
+
+        @Test
+        @DisplayName("前缀 + JSON + 后缀 → 正确提取")
+        void prefixJsonSuffix() {
+            String input = "嗯...\n{\"dialogue\":\"好的\",\"action_type\":\"GIVE_ITEM\",\"action_parameters\":{\"item_id\":\"BREAD\",\"amount\":1}}\n希望对你有帮助。";
+            Optional<LLMResponse> result = parser.parse(input);
+            assertTrue(result.isPresent());
+            assertEquals("GIVE_ITEM", result.get().action_type());
+        }
+
+        @Test
+        @DisplayName("Markdown + 前缀文本 + JSON → 正确提取")
+        void markdownWithPrefixJson() {
+            String input = "```json\n（微笑）\n{\"dialogue\":\"你好啊\",\"action_type\":\"NONE\"}\n```";
+            Optional<LLMResponse> result = parser.parse(input);
+            assertTrue(result.isPresent());
+            assertEquals("你好啊", result.get().dialogue());
+        }
+
+        @Test
+        @DisplayName("嵌套 JSON 对象正确提取")
+        void nestedJsonObject() {
+            String input = "角色描写\n{\"dialogue\":\"给你\",\"action_type\":\"GIVE_ITEM\",\"action_parameters\":{\"item_id\":\"DIAMOND\",\"amount\":1}}";
+            Optional<LLMResponse> result = parser.parse(input);
+            assertTrue(result.isPresent());
+            assertEquals("DIAMOND", result.get().action_parameters().item_id());
+        }
+
+        @Test
+        @DisplayName("dialogue 中的花括号不影响提取")
+        void dialogueWithBraces() {
+            String input = "{\"dialogue\":\"坐标是{100,64}\",\"action_type\":\"NONE\"}";
+            Optional<LLMResponse> result = parser.parse(input);
+            assertTrue(result.isPresent());
+            assertTrue(result.get().dialogue().contains("{100,64}"));
+        }
+
+        @Test
+        @DisplayName("无 JSON 内容走纯文本兜底")
+        void noJsonFallsBackToPlaintext() {
+            String input = "旅行者你好，今天天气不错。";
+            Optional<LLMResponse> result = parser.parse(input);
+            assertTrue(result.isPresent());
+            assertEquals("NONE", result.get().action_type());
+            assertTrue(result.get().dialogue().contains("旅行者"));
+        }
+
+        @Test
+        @DisplayName("extractFirstJsonObject 返回 null 当无 JSON")
+        void extractReturnsNull() {
+            assertNull(parser.extractFirstJsonObject("no json here"));
+            assertNull(parser.extractFirstJsonObject(null));
+            assertNull(parser.extractFirstJsonObject(""));
+        }
+    }
 }

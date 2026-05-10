@@ -215,6 +215,11 @@ public class ChatCollector implements Listener {
             sanitized.value()
         ));
 
+        // 回显玩家消息（仅 AI 会话状态，不广播全服）
+        if (config.isChatEchoEnabled()) {
+            player.sendMessage("§7[你] §f" + sanitized.value());
+        }
+
         // 标记为处理中，防止重复提交
         markProcessing(playerId);
 

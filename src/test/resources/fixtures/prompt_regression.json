@@ -82,5 +82,23 @@
     "llm_output": "{\"dialogue\":\"他说：\\\"你好！\\\" 然后转身离开了。\",\"action_type\":\"NONE\",\"action_parameters\":null,\"emotion_change\":\"NONE\"}",
     "expected_action": "NONE",
     "expected_dialogue_contains": "你好"
+  },
+  {
+    "description": "前缀角色文本 + JSON（常见模型漂移场景）",
+    "llm_output": "（略微打量了你一眼）\n{\"dialogue\":\"你好，旅行者。今天风和日丽。\",\"action_type\":\"NONE\",\"action_parameters\":null,\"emotion_change\":\"NONE\"}",
+    "expected_action": "NONE",
+    "expected_dialogue_contains": "旅行者"
+  },
+  {
+    "description": "JSON + 后缀文本",
+    "llm_output": "{\"dialogue\":\"给你面包，路上小心。\",\"action_type\":\"GIVE_ITEM\",\"action_parameters\":{\"item_id\":\"BREAD\",\"amount\":2},\"emotion_change\":\"NONE\"}\n希望对你有帮助。",
+    "expected_action": "GIVE_ITEM",
+    "expected_dialogue_contains": "面包"
+  },
+  {
+    "description": "前缀语气词 + GIVE_XP JSON",
+    "llm_output": "嗯，让我想想...\n{\"dialogue\":\"这些经验传授给你。\",\"action_type\":\"GIVE_XP\",\"action_parameters\":{\"xp_amount\":50},\"emotion_change\":\"NONE\"}",
+    "expected_action": "GIVE_XP",
+    "expected_dialogue_contains": "经验"
   }
 ]
