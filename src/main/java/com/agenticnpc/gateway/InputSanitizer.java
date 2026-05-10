@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
 public class InputSanitizer {
 
     private static final int MAX_INPUT_LENGTH = 100;
+    public  static final int MAX_TITLE_LENGTH = 32;
+    public  static final int MAX_SUBTITLE_LENGTH = 64;
 
     /**
      * 已知 Prompt 注入模式（v1.0）。

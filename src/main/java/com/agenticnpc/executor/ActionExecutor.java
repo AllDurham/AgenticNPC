@@ -19,6 +19,9 @@ import org.bukkit.potion.PotionEffect;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
 
+import com.agenticnpc.gateway.InputSanitizer;
+
+import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
 
@@ -32,6 +35,24 @@ import java.util.logging.Logger;
  * 实现：纯 Bukkit Java API。
  */
 public class ActionExecutor implements ExecutionCallback {
+
+    /**
+     * Sound 别名映射表（1.13+ → 1.12.2）。
+     * 仅覆盖 1.13 "扁平化" 中被重命名的少量音效。
+     * 参考 ItemSafetyGuard.ALIAS_MAP 模式。
+     */
+    private static final Map<String, String> SOUND_ALIAS_MAP = new HashMap<>();
+    static {
+        SOUND_ALIAS_MAP.put("BLOCK_NOTE_BLOCK_HARP",  "BLOCK_NOTE_HARP");
+        SOUND_ALIAS_MAP.put("BLOCK_NOTE_BLOCK_BASS",  "BLOCK_NOTE_BASS");
+        SOUND_ALIAS_MAP.put("BLOCK_NOTE_BLOCK_SNARE", "BLOCK_NOTE_SNARE");
+        SOUND_ALIAS_MAP.put("BLOCK_NOTE_BLOCK_PLING", "BLOCK_NOTE_PLING");
+        SOUND_ALIAS_MAP.put("BLOCK_NOTE_BLOCK_HAT",   "BLOCK_NOTE_HAT");
+        SOUND_ALIAS_MAP.put("AMBIENT_CAVE",           "AMBIENCE_CAVE");
+        SOUND_ALIAS_MAP.put("AMBIENT_WEATHER_RAIN",   "WEATHER_RAIN");
+        SOUND_ALIAS_MAP.put("AMBIENT_WEATHER_THUNDER","WEATHER_THUNDER");
+        SOUND_ALIAS_MAP.put("ENTITY_PLAYER_LEVEL_UP", "ENTITY_PLAYER_LEVELUP");
+    }
 
     private final ConfigManager  config;
     private final TeleportGuard  teleportGuard;
@@ -69,6 +90,15 @@ public class ActionExecutor implements ExecutionCallback {
                 break;
             case GIVE_EFFECT:
                 executeGiveEffect(player, validation.parameters(), brain);
+                break;
+            case SEND_TITLE:
+                executeSendTitle(player, validation.parameters(), brain);
+                break;
+            case PLAY_SOUND:
+                executePlaySound(player, validation.parameters(), brain);
+                break;
+            case GIVE_XP:
+                executeGiveXp(player, validation.parameters(), brain);
                 break;
             default:
                 break;
@@ -208,5 +238,130 @@ public class ActionExecutor implements ExecutionCallback {
                     + "（当前版本不支持，已跳过）");
             }
         }
+    }
+
+    // ================================================================
+    // SEND_TITLE（标题发送）
+    // ================================================================
+
+    private void executeSendTitle(Player player, com.agenticnpc.model.ActionParameters params, BrainConfig brain) {
+        if (params == null || params.title_text() == null || params.title_text().isBlank()) {
+            logger.warning("[ActionExecutor] SEND_TITLE 参数不完整，跳过");
+            return;
+        }
+
+        // 截断标题长度
+        String title = params.title_text();
+        if (title.length() > InputSanitizer.MAX_TITLE_LENGTH) {
+            title = title.substring(0, InputSanitizer.MAX_TITLE_LENGTH);
+        }
+
+        String subtitle = params.title_subtitle();
+        if (subtitle != null && subtitle.length() > InputSanitizer.MAX_SUBTITLE_LENGTH) {
+            subtitle = subtitle.substring(0, InputSanitizer.MAX_SUBTITLE_LENGTH);
+        }
+
+        // 截断时长参数到 [0, 200]
+        int fadeIn  = clampInt(params.title_fade_in()  != null ? params.title_fade_in()  : 10, 0, 200);
+        int stay    = clampInt(params.title_stay()     != null ? params.title_stay()     : 60, 0, 200);
+        int fadeOut = clampInt(params.title_fade_out() != null ? params.title_fade_out() : 20, 0, 200);
+
+        player.sendTitle(title, subtitle, fadeIn, stay, fadeOut);
+
+        logger.info(String.format(
+            "[ActionExecutor] SEND_TITLE | 玩家: %s | 主标题: %s | 副标题: %s | Brain: %s",
+            player.getName(), title, subtitle != null ? subtitle : "-", brain.id()));
+    }
+
+    // ================================================================
+    // PLAY_SOUND（音效播放，含别名映射）
+    // ================================================================
+
+    private void executePlaySound(Player player, com.agenticnpc.model.ActionParameters params, BrainConfig brain) {
+        if (params == null || params.sound_name() == null || params.sound_name().isBlank()) {
+            logger.warning("[ActionExecutor] PLAY_SOUND 参数不完整，跳过");
+            return;
+        }
+
+        String soundName = params.sound_name().toUpperCase().trim();
+
+        // 音量 / 音调截断
+        float volume = (float) clampDouble(
+            params.sound_volume() != null ? params.sound_volume() : 1.0, 0.0, 2.0);
+        float pitch  = (float) clampDouble(
+            params.sound_pitch()  != null ? params.sound_pitch()  : 1.0, 0.5, 2.0);
+
+        // 尝试解析 Sound 枚举（含别名映射回退）
+        Sound sound = resolveSound(soundName);
+        if (sound == null) {
+            logger.warning("[ActionExecutor] PLAY_SOUND 枚举不存在，静默跳过: " + soundName);
+            return;
+        }
+
+        player.playSound(player.getLocation(), sound, volume, pitch);
+
+        logger.info(String.format(
+            "[ActionExecutor] PLAY_SOUND | 玩家: %s | 音效: %s | 音量: %.1f | 音调: %.1f | Brain: %s",
+            player.getName(), soundName, volume, pitch, brain.id()));
+    }
+
+    /**
+     * 解析 Sound 枚举名，支持 1.13+ → 1.12.2 别名映射回退。
+     */
+    private Sound resolveSound(String name) {
+        try {
+            return Sound.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            // 别名映射回退
+            String alias = SOUND_ALIAS_MAP.get(name);
+            if (alias != null) {
+                try {
+                    return Sound.valueOf(alias);
+                } catch (IllegalArgumentException ignored) {}
+            }
+            return null;
+        }
+    }
+
+    // ================================================================
+    // GIVE_XP（经验值给予）
+    // ================================================================
+
+    private void executeGiveXp(Player player, com.agenticnpc.model.ActionParameters params, BrainConfig brain) {
+        if (params == null || params.xp_amount() == null || params.xp_amount() <= 0) {
+            logger.warning("[ActionExecutor] GIVE_XP 参数无效，跳过");
+            return;
+        }
+
+        int requested = params.xp_amount();
+        int maxXp = config.getXpMaxPerAction();
+        int actual = Math.min(requested, maxXp);
+        boolean truncated = actual < requested;
+
+        player.giveExp(actual);
+
+        if (truncated) {
+            logger.info(String.format(
+                "[ActionExecutor] GIVE_XP（已截断）| 玩家: %s | 请求: %d | 实际: %d | Brain: %s",
+                player.getName(), requested, actual, brain.id()));
+            player.sendMessage("§7[你获得了 " + actual + " 点经验值（原始请求 " + requested + " 已截断到上限 " + maxXp + "）]");
+        } else {
+            logger.info(String.format(
+                "[ActionExecutor] GIVE_XP | 玩家: %s | 数量: %d | Brain: %s",
+                player.getName(), actual, brain.id()));
+            player.sendMessage("§7[你获得了 " + actual + " 点经验值]");
+        }
+    }
+
+    // ================================================================
+    // 工具方法
+    // ================================================================
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static double clampDouble(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 }

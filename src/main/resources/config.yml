@@ -93,7 +93,12 @@ token-alert:
 # ---- 审计日志配置 ----
 audit:
   enabled: true
+  auto-cleanup: true
   retention-days: 30
+
+# ---- XP 配置 ----
+xp:
+  max-per-action: 1000
 
 # ---- 调试模式 ----
 debug: true
@@ -116,6 +121,9 @@ brains:
       - "GIVE_ITEM"
       - "TELEPORT"
       - "GIVE_EFFECT"
+      - "SEND_TITLE"
+      - "PLAY_SOUND"
+      - "GIVE_XP"
     allowed-items:
       - "BREAD"
       - "APPLE"
@@ -132,6 +140,9 @@ brains:
     profile-scope: "brain"
     emotion-shared: false
     default-emotion: "NEUTRAL"
+    sound-whitelist:
+      - "ENTITY_VILLAGER_AMBIENT"
+      - "ENTITY_VILLAGER_HAPPY"
 
   # ---- 治疗师梅琳：专职治疗，不给物品不传送 ----
   - id: "healer"
@@ -144,6 +155,8 @@ brains:
     fallback-dialogue: "治愈之力暂时消散了..."
     allowed-action-types:
       - "GIVE_EFFECT"
+      - "SEND_TITLE"
+      - "PLAY_SOUND"
     allowed-items: []
     allowed-potion-effects:
       - "HEAL"
@@ -156,6 +169,9 @@ brains:
     profile-scope: "brain"
     emotion-shared: false
     default-emotion: "FRIENDLY"
+    sound-whitelist:
+      - "ENTITY_VILLAGER_AMBIENT"
+      - "UI_TOAST_CHALLENGE_COMPLETE"
 
   # ---- 传送师奥利安：专职传送，不给物品不加效果 ----
   - id: "teleporter"
@@ -168,6 +184,8 @@ brains:
     fallback-dialogue: "空间的涟漪暂时紊乱了..."
     allowed-action-types:
       - "TELEPORT"
+      - "SEND_TITLE"
+      - "PLAY_SOUND"
     allowed-items: []
     allowed-potion-effects: []
     dialogue-sound: "ENTITY_ENDER_DRAGON_FLAP"
@@ -177,3 +195,6 @@ brains:
     profile-scope: "brain"
     emotion-shared: true
     default-emotion: "WARY"
+    sound-whitelist:
+      - "ENTITY_ENDER_DRAGON_FLAP"
+      - "BLOCK_PORTAL_TRAVEL"

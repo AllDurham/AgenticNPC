@@ -8,7 +8,10 @@ public enum ActionType {
     NONE,
     GIVE_ITEM,
     TELEPORT,
-    GIVE_EFFECT;
+    GIVE_EFFECT,
+    SEND_TITLE,
+    PLAY_SOUND,
+    GIVE_XP;
 
     /**
      * 安全解析：将字符串转换为枚举，未知值返回 NONE。

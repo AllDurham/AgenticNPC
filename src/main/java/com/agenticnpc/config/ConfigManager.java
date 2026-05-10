@@ -61,6 +61,11 @@ public class ConfigManager {
                                                ? (List<String>) brainMap.get("allowed-potion-effects")
                                                : List.of();
 
+                @SuppressWarnings("unchecked")
+                List<String> soundNames = brainMap.containsKey("sound-whitelist")
+                                               ? (List<String>) brainMap.get("sound-whitelist")
+                                               : List.of();
+
                 // 将物品名解析为 Material Set
                 Set<Material> allowedItems = itemNames.stream()
                     .map(itemName -> Material.matchMaterial(itemName.toUpperCase()))
@@ -75,6 +80,10 @@ public class ConfigManager {
                     .map(String::toUpperCase)
                     .collect(Collectors.toSet());
 
+                Set<String> soundWhitelist = soundNames.stream()
+                    .map(String::toUpperCase)
+                    .collect(Collectors.toSet());
+
                 String profileScope = brainMap.containsKey("profile-scope")
                     ? (String) brainMap.get("profile-scope") : "brain";
                 boolean emotionShared = brainMap.containsKey("emotion-shared")
@@ -86,7 +95,8 @@ public class ConfigManager {
                     id, name, personality, fallback,
                     allowedActionTypes, allowedItems, allowedPotionEffects,
                     sound, (float) volume, (float) pitch, actionBar,
-                    profileScope, emotionShared, defaultEmotion
+                    profileScope, emotionShared, defaultEmotion,
+                    soundWhitelist
                 );
 
                 brainConfigMap.put(id, brainConfig);
@@ -198,6 +208,9 @@ public class ConfigManager {
 
     // ---- 审计自动清理 ----
     public boolean isAuditAutoCleanup()             { return config.getBoolean("audit.auto-cleanup", false); }
+
+    // ---- XP 配置 ----
+    public int getXpMaxPerAction()                  { return config.getInt("xp.max-per-action", 1000); }
 
     // ---- Brain 配置 ----
     public Optional<BrainConfig> getBrainConfig(String brainId) {

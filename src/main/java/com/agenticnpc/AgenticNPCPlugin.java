@@ -4,6 +4,7 @@ import com.agenticnpc.audit.AuditLogger;
 import com.agenticnpc.audit.TokenTracker;
 import com.agenticnpc.command.BindCommand;
 import com.agenticnpc.command.BindPendingListener;
+import com.agenticnpc.command.EmotionCommand;
 import com.agenticnpc.command.StatsCommand;
 import com.agenticnpc.config.ConfigManager;
 import com.agenticnpc.context.PromptBuilder;
@@ -133,6 +134,10 @@ public class AgenticNPCPlugin extends JavaPlugin {
         if (configManager.isAuditEnabled()) {
             auditLogger = new AuditLogger(configManager, getDataFolder(), getLogger());
             asyncDispatcher.setAuditLogger(auditLogger);
+            // S4-E1: 审计日志自动清理
+            if (configManager.isAuditAutoCleanup()) {
+                auditLogger.startCleanupTask(this);
+            }
         }
 
         // Sprint 2: Token 统计
@@ -142,6 +147,11 @@ public class AgenticNPCPlugin extends JavaPlugin {
                 try { return sqlite.getConnection(); }
                 catch (java.sql.SQLException e) { throw new RuntimeException(e); }
             });
+        } else if (memoryRepository instanceof MySQLRepository mysql) {
+            tokenTracker.setDbConnection(() -> {
+                try { return mysql.getConnection(); }
+                catch (java.sql.SQLException e) { throw new RuntimeException(e); }
+            });
         }
         asyncDispatcher.setTokenTracker(tokenTracker);
 
@@ -149,6 +159,8 @@ public class AgenticNPCPlugin extends JavaPlugin {
         StatsCommand statsCommand = new StatsCommand(tokenTracker);
         BindCommand  bindCmd      = new BindCommand(brainStorage, configManager);
         bindCmd.setStatsCommand(statsCommand);
+        EmotionCommand emotionCmd = new EmotionCommand(configManager, emotionManager, auditLogger);
+        bindCmd.setEmotionCommand(emotionCmd);
         getCommand("agenticnpc").setExecutor(bindCmd);
         getCommand("agenticnpc").setTabCompleter(bindCmd);
 
@@ -158,7 +170,7 @@ public class AgenticNPCPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(chatCollector, this);
 
         getLogger().info("========================================");
-        getLogger().info("  AgenticNPC 启动完成！（Sprint 3）");
+        getLogger().info("  AgenticNPC 启动完成！（Sprint 4）");
         getLogger().info("  LLM 端点: " + configManager.getLLMEndpoint());
         getLogger().info("  模型:     " + configManager.getLLMModel());
         getLogger().info("  服务器ID: " + configManager.getServerId());
@@ -184,8 +196,24 @@ public class AgenticNPCPlugin extends JavaPlugin {
     public PlayerProfileManager getProfileManager() { return profileManager; }
 
     private void initMemorySystem() {
-        memoryRepository = new SQLiteRepository(this, configManager, getLogger());
-        memoryManager    = new MemoryManager(memoryRepository, configManager, getLogger());
+        String backend = configManager.getDbBackend();
+
+        if ("mysql".equalsIgnoreCase(backend)) {
+            try {
+                MySQLRepository mysqlRepo = new MySQLRepository(configManager, getLogger());
+                memoryRepository = mysqlRepo;
+                getLogger().info("[记忆] 使用 MySQL 后端");
+            } catch (Exception e) {
+                getLogger().severe("[记忆] MySQL 连接失败，插件将禁用 | 原因: " + e.getMessage());
+                getServer().getPluginManager().disablePlugin(this);
+                return;
+            }
+        } else {
+            memoryRepository = new SQLiteRepository(this, configManager, getLogger());
+            getLogger().info("[记忆] 使用 SQLite 后端");
+        }
+
+        memoryManager = new MemoryManager(memoryRepository, configManager, getLogger());
         getLogger().info("[记忆] 记忆系统初始化完成");
     }
 

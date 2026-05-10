@@ -9,4 +9,12 @@ commands:
   agenticnpc:
     description: AgenticNPC 主命令
     aliases: [anpc]
-    usage: /anpc <bind|unbind|reload|status>
+    usage: /anpc <bind|unbind|reload|status|stats|emotion|profile>
+
+permissions:
+  agenticnpc.admin:
+    description: 管理命令权限（bind/unbind/reload/status/stats）
+    default: op
+  agenticnpc.admin.emotion:
+    description: 情绪管理命令权限（/anpc emotion）
+    default: op

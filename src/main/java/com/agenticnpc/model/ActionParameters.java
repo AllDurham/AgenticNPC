@@ -18,5 +18,20 @@ public record ActionParameters(
     // GIVE_EFFECT
     String effect_name,
     Integer duration_seconds,
-    Integer amplifier
+    Integer amplifier,
+
+    // SEND_TITLE
+    String title_text,
+    String title_subtitle,
+    Integer title_fade_in,
+    Integer title_stay,
+    Integer title_fade_out,
+
+    // PLAY_SOUND
+    String sound_name,
+    Double sound_volume,
+    Double sound_pitch,
+
+    // GIVE_XP
+    Integer xp_amount
 ) {}

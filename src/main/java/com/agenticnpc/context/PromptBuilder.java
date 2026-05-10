@@ -162,10 +162,14 @@ public class PromptBuilder {
         sb.append("\n");
 
         // ---- 可执行动作说明（动态生成）----
-        boolean hasGiveItem  = brain.allowedActionTypes().contains("GIVE_ITEM");
-        boolean hasTeleport  = brain.allowedActionTypes().contains("TELEPORT");
-        boolean hasEffect    = brain.allowedActionTypes().contains("GIVE_EFFECT");
-        boolean hasAnyAction = hasGiveItem || hasTeleport || hasEffect;
+        boolean hasGiveItem   = brain.allowedActionTypes().contains("GIVE_ITEM");
+        boolean hasTeleport   = brain.allowedActionTypes().contains("TELEPORT");
+        boolean hasEffect     = brain.allowedActionTypes().contains("GIVE_EFFECT");
+        boolean hasSendTitle  = brain.allowedActionTypes().contains("SEND_TITLE");
+        boolean hasPlaySound  = brain.allowedActionTypes().contains("PLAY_SOUND");
+        boolean hasGiveXp     = brain.allowedActionTypes().contains("GIVE_XP");
+        boolean hasAnyAction  = hasGiveItem || hasTeleport || hasEffect
+            || hasSendTitle || hasPlaySound || hasGiveXp;
 
         if (hasAnyAction) {
             sb.append("【你可以执行的动作】\n");
@@ -185,6 +189,21 @@ public class PromptBuilder {
             if (hasEffect) {
                 sb.append("- GIVE_EFFECT: 给予玩家药水效果（如治疗、速度等）\n");
             }
+            if (hasSendTitle) {
+                sb.append("- SEND_TITLE: 向玩家发送游戏内大标题\n");
+                sb.append("  主标题最长 32 字符，副标题最长 64 字符\n");
+            }
+            if (hasPlaySound) {
+                sb.append("- PLAY_SOUND: 向玩家播放音效\n");
+                if (brain.soundWhitelist() != null && !brain.soundWhitelist().isEmpty()) {
+                    sb.append("  可用音效: ");
+                    sb.append(String.join(", ", brain.soundWhitelist()));
+                    sb.append("\n");
+                }
+            }
+            if (hasGiveXp) {
+                sb.append("- GIVE_XP: 给予玩家经验值（点数，非等级）\n");
+            }
             sb.append("\n");
         }
 
@@ -197,6 +216,9 @@ public class PromptBuilder {
         if (hasGiveItem)  actionValues.append(", GIVE_ITEM");
         if (hasTeleport)  actionValues.append(", TELEPORT");
         if (hasEffect)    actionValues.append(", GIVE_EFFECT");
+        if (hasSendTitle) actionValues.append(", SEND_TITLE");
+        if (hasPlaySound) actionValues.append(", PLAY_SOUND");
+        if (hasGiveXp)    actionValues.append(", GIVE_XP");
 
         sb.append("{\n");
         sb.append("  \"dialogue\": \"NPC 说的话（必填，不超过100字）\",\n");
@@ -221,6 +243,24 @@ public class PromptBuilder {
             sb.append("    \"effect_name\": \"HEAL/SPEED/REGENERATION 等\",\n");
             sb.append("    \"duration_seconds\": 30,\n");
             sb.append("    \"amplifier\": 0");
+            first = false;
+        }
+        if (hasSendTitle) {
+            if (!first) sb.append(",\n");
+            sb.append("    \"title_text\": \"主标题（不超过32字）\",\n");
+            sb.append("    \"title_subtitle\": \"副标题（不超过64字）\",\n");
+            sb.append("    \"title_fade_in\": 10, \"title_stay\": 60, \"title_fade_out\": 20");
+            first = false;
+        }
+        if (hasPlaySound) {
+            if (!first) sb.append(",\n");
+            sb.append("    \"sound_name\": \"音效枚举名\",\n");
+            sb.append("    \"sound_volume\": 1.0, \"sound_pitch\": 1.0");
+            first = false;
+        }
+        if (hasGiveXp) {
+            if (!first) sb.append(",\n");
+            sb.append("    \"xp_amount\": 100");
         }
         sb.append("\n  },\n");
         sb.append("  \"emotion_change\": \"UPGRADE / DOWNGRADE / NONE（可选，默认 NONE）\"\n");
@@ -229,6 +269,9 @@ public class PromptBuilder {
         if (hasGiveItem) {
             sb.append("item_id 必须使用 Minecraft 1.12 版本的 Bukkit Material 全大写英文名称，");
             sb.append("例如: DIAMOND, BREAD, IRON_INGOT。\n");
+        }
+        if (hasPlaySound) {
+            sb.append("sound_name 必须使用配置白名单中的音效枚举名，不可自行编造。\n");
         }
         sb.append("如果不确定参数，将 action_type 设为 NONE，不要猜测。\n\n");
 

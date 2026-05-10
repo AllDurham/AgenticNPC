@@ -77,6 +77,14 @@
             <scope>compile</scope>
         </dependency>
 
+        <!-- MySQL JDBC -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>9.1.0</version>
+            <scope>compile</scope>
+        </dependency>
+
         <!-- Citizens API（provided，运行时由服务器提供） -->
         <dependency>
             <groupId>net.citizensnpcs</groupId>
@@ -132,6 +140,10 @@
                                 <relocation>
                                     <pattern>org.sqlite</pattern>
                                     <shadedPattern>com.agenticnpc.libs.sqlite</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>com.mysql</pattern>
+                                    <shadedPattern>com.agenticnpc.libs.mysql</shadedPattern>
                                 </relocation>
                             </relocations>
                             <filters>

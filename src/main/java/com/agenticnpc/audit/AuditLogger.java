@@ -143,6 +143,53 @@ public class AuditLogger {
         ));
     }
 
+    /**
+     * 启动审计日志自动清理定时任务。
+     * 每天执行一次，删除超过 retention-days 的日志文件。
+     * 必须在主类 onEnable 中、audit 初始化之后调用。
+     */
+    public void startCleanupTask(org.bukkit.plugin.Plugin plugin) {
+        long intervalTicks = 20L * 60 * 60 * 24; // 24 小时
+        int retentionDays = config.getAuditRetentionDays();
+
+        plugin.getServer().getScheduler().runTaskTimerAsynchronously(plugin, () -> {
+            try {
+                cleanupOldLogs(retentionDays);
+            } catch (Exception e) {
+                logger.warning("[审计] 日志自动清理失败: " + e.getMessage());
+            }
+        }, intervalTicks, intervalTicks); // 首次执行延迟 24 小时
+
+        logger.info("[审计] 审计日志自动清理已启动 | 保留天数: " + retentionDays);
+    }
+
+    private void cleanupOldLogs(int retentionDays) {
+        if (!logDir.exists()) return;
+
+        long cutoff = System.currentTimeMillis() - (long) retentionDays * 24 * 60 * 60 * 1000;
+        String cutoffDate = DATE_FORMAT.format(new Date(cutoff));
+
+        File[] files = logDir.listFiles((dir, name) ->
+            name.startsWith("audit-") && name.endsWith(".log")
+        );
+        if (files == null) return;
+
+        int deleted = 0;
+        for (File file : files) {
+            // 文件名格式: audit-2024-01-01.log
+            String dateStr = file.getName()
+                .replace("audit-", "")
+                .replace(".log", "");
+            if (dateStr.compareTo(cutoffDate) < 0) {
+                if (file.delete()) deleted++;
+            }
+        }
+
+        if (deleted > 0) {
+            logger.info("[审计] 自动清理完成 | 删除 " + deleted + " 个过期日志文件");
+        }
+    }
+
     public void shutdown() {
         running = false;
         consumer.interrupt();

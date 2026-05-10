@@ -65,9 +65,46 @@ public class ActionValidator {
         // 需要参数的动作类型检查
         if ((actionType == ActionType.GIVE_ITEM
                 || actionType == ActionType.TELEPORT
-                || actionType == ActionType.GIVE_EFFECT)
+                || actionType == ActionType.GIVE_EFFECT
+                || actionType == ActionType.SEND_TITLE
+                || actionType == ActionType.PLAY_SOUND
+                || actionType == ActionType.GIVE_XP)
                 && response.action_parameters() == null) {
             return ValidationResult.invalid(actionType.name() + " 缺少 action_parameters");
+        }
+
+        var params = response.action_parameters();
+
+        // ---- SEND_TITLE 参数校验 ----
+        if (actionType == ActionType.SEND_TITLE) {
+            if (params.title_text() == null || params.title_text().isBlank()) {
+                return ValidationResult.invalid("SEND_TITLE 缺少 title_text");
+            }
+        }
+
+        // ---- PLAY_SOUND 参数校验 ----
+        if (actionType == ActionType.PLAY_SOUND) {
+            if (params.sound_name() == null || params.sound_name().isBlank()) {
+                return ValidationResult.invalid("PLAY_SOUND 缺少 sound_name");
+            }
+            // 校验音效是否在 Brain sound-whitelist 中（brain 已在上方声明）
+            if (brain != null && brain.soundWhitelist() != null && !brain.soundWhitelist().isEmpty()) {
+                String upperSound = params.sound_name().toUpperCase().trim();
+                if (!brain.soundWhitelist().contains(upperSound)) {
+                    logger.warning(String.format(
+                        "[安全][ActionValidator] PLAY_SOUND 音效不在白名单 | 请求: %s | 白名单: %s",
+                        upperSound, brain.soundWhitelist()
+                    ));
+                    return ValidationResult.invalid("音效不在白名单: " + upperSound);
+                }
+            }
+        }
+
+        // ---- GIVE_XP 参数校验 ----
+        if (actionType == ActionType.GIVE_XP) {
+            if (params.xp_amount() == null || params.xp_amount() <= 0) {
+                return ValidationResult.invalid("GIVE_XP 数量无效（必须 > 0）");
+            }
         }
 
         return ValidationResult.valid(actionType, response.action_parameters());

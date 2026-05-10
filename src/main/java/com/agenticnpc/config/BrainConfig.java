@@ -20,5 +20,6 @@ public record BrainConfig(
     boolean       actionBarEnabled,
     String        profileScope,      // "brain" 或 "entity"
     boolean       emotionShared,     // true=全体共享情绪
-    String        defaultEmotion     // 初始情绪档位
+    String        defaultEmotion,    // 初始情绪档位
+    Set<String>   soundWhitelist     // PLAY_SOUND 白名单
 ) {}
