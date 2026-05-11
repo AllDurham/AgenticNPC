@@ -88,9 +88,7 @@ public class PromptBuilder {
         ChatMessage userMessage = new ChatMessage("user", isolatedInput);
 
         if (configManager.isDebugMode()) {
-            logger.info("[PromptBuilder] System Prompt 长度: "
-                + systemPrompt.length() + " 字符");
-            logger.info("[PromptBuilder] 历史条数: " + history.size());
+            logTokenBreakdown(systemPrompt, history, event.sanitizedInput());
         }
 
         return new PromptPackage(systemPrompt, List.copyOf(history), userMessage, brain);
@@ -102,8 +100,11 @@ public class PromptBuilder {
 
     private String buildSystemPrompt(Player player, BrainConfig brain) {
         StringBuilder sb = new StringBuilder();
+        // Token breakdown 追踪点
+        int sectionStart;
 
         // ---- NPC 人格设定 ----
+        sectionStart = sb.length();
         sb.append("【角色设定】\n");
         sb.append(brain.personality()).append("\n");
         sb.append("你只扮演这个角色，用符合人物性格的语气自然对话。\n");
@@ -327,5 +328,59 @@ public class PromptBuilder {
         if (item != null && item.getType() != Material.AIR) {
             parts.add(slot + ":" + item.getType().name() + "x" + item.getAmount());
         }
+    }
+
+    // ================================================================
+    // Token Breakdown
+    // ================================================================
+
+    /**
+     * 估算文本的 token 数。
+     * 简易算法：中文约 2 字符/token，英文约 4 字符/token，取平均 /3。
+     * 不引入 tokenizer 大依赖。
+     */
+    static int estimateTokens(String text) {
+        if (text == null || text.isEmpty()) return 0;
+        // 统计中文字符数（CJK Unified Ideographs 范围）
+        long cjk = text.chars().filter(c -> c >= 0x4E00 && c <= 0x9FFF).count();
+        long other = text.length() - cjk;
+        return (int) ((cjk / 2) + (other / 4) + 1);
+    }
+
+    /**
+     * 输出 Prompt 各部分的 token 估算。
+     */
+    private void logTokenBreakdown(String systemPrompt, Deque<ChatMessage> history, String input) {
+        // 按 section header 分段估算
+        int personality = estimateSection(systemPrompt, "【角色设定】", "【关于该玩家");
+        int profile     = estimateSection(systemPrompt, "【关于该玩家", "【与该玩家的历史");
+        int summary     = estimateSection(systemPrompt, "【与该玩家的历史", "【你当前对该玩家");
+        int emotion     = estimateSection(systemPrompt, "【你当前对该玩家", "【当前与你对话");
+        int playerInfo  = estimateSection(systemPrompt, "【当前与你对话", "【你可以执行");
+        int actions     = estimateSection(systemPrompt, "【你可以执行", "【输出格式");
+        int format      = estimateSection(systemPrompt, "【输出格式", null);
+
+        int historyTokens = history.stream()
+            .mapToInt(m -> estimateTokens(m.content()))
+            .sum();
+
+        int inputTokens = estimateTokens(input);
+        int total = estimateTokens(systemPrompt) + historyTokens + inputTokens;
+
+        logger.info(String.format(
+            "[PromptTokens] personality=%d profile=%d summary=%d emotion=%d " +
+            "player=%d actions=%d format=%d history=%d input=%d total=%d",
+            personality, profile, summary, emotion,
+            playerInfo, actions, format,
+            historyTokens, inputTokens, total
+        ));
+    }
+
+    private int estimateSection(String text, String startHeader, String endHeader) {
+        int start = text.indexOf(startHeader);
+        if (start < 0) return 0;
+        int end = endHeader != null ? text.indexOf(endHeader, start) : text.length();
+        if (end < 0) end = text.length();
+        return estimateTokens(text.substring(start, end));
     }
 }

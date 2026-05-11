@@ -43,23 +43,29 @@ public class ChatCollector implements Listener {
      */
     private record ListeningSession(
         String       npcBrainId,
+        String       npcBrainName,
         Entity       npcEntity,
         long         startTimeMs,
+        long         lastReminderMs,
         SessionState state
     ) {
         ListeningSession withState(SessionState newState) {
-            return new ListeningSession(npcBrainId, npcEntity, startTimeMs, newState);
+            return new ListeningSession(npcBrainId, npcBrainName, npcEntity, startTimeMs, lastReminderMs, newState);
         }
 
         ListeningSession resetTimer() {
-            return new ListeningSession(npcBrainId, npcEntity,
-                System.currentTimeMillis(), state);
+            return new ListeningSession(npcBrainId, npcBrainName, npcEntity,
+                System.currentTimeMillis(), lastReminderMs, state);
+        }
+
+        ListeningSession updateReminderTime(long now) {
+            return new ListeningSession(npcBrainId, npcBrainName, npcEntity,
+                startTimeMs, now, state);
         }
     }
 
     // ---- 配置常量 ----
     private static final int    MAX_DISTANCE_BLOCKS = 5;
-    private static final long   LISTEN_TIMEOUT_MS   = 30_000L;
     private static final String CANCEL_KEYWORD      = "取消";
 
     // ---- 依赖 ----
@@ -104,17 +110,19 @@ public class ChatCollector implements Listener {
         // 如果已有进行中的会话，先取消旧会话（不发消息，静默替换）
         sessions.remove(playerId);
 
-        sessions.put(playerId, new ListeningSession(
-            brainId,
-            npcEntity,
-            System.currentTimeMillis(),
-            SessionState.LISTENING
-        ));
-
-        // 获取 NPC 名称用于提示
+        // 获取 NPC 名称（用于 Title 提示 + 会话记录）
         String brainName = config.getBrainConfig(brainId)
             .map(b -> b.name())
             .orElse("NPC");
+
+        sessions.put(playerId, new ListeningSession(
+            brainId,
+            brainName,
+            npcEntity,
+            System.currentTimeMillis(),
+            0L,
+            SessionState.LISTENING
+        ));
 
         // Title 提示比聊天消息更沉浸
         player.sendTitle(
@@ -129,22 +137,52 @@ public class ChatCollector implements Listener {
 
     /**
      * 将会话标记为处理中（防止玩家重复提交）。
+     * 显示"正在思考..."ActionBar。
      * 可在任意线程调用（ConcurrentHashMap 保证线程安全）。
      */
     public void markProcessing(UUID playerId) {
         sessions.computeIfPresent(playerId, (id, session) ->
             session.withState(SessionState.PROCESSING)
         );
+
+        // 显示"正在思考..."ActionBar
+        if (config.isThinkingActionBarEnabled()) {
+            Player player = plugin.getServer().getPlayer(playerId);
+            if (player != null && player.isOnline()) {
+                ListeningSession session = sessions.get(playerId);
+                String name = session != null ? session.npcBrainName() : "NPC";
+                syncToMain(() ->
+                    player.spigot().sendMessage(
+                        net.md_5.bungee.api.ChatMessageType.ACTION_BAR,
+                        new net.md_5.bungee.api.chat.TextComponent("§6" + name + "正在思考...")
+                    )
+                );
+            }
+        }
     }
 
     /**
      * LLM 响应完成后，将会话恢复为 LISTENING（允许继续对话）。
+     * 清除"正在思考..."ActionBar。
      * 可在任意线程调用。
      */
     public void markListeningAfterResponse(UUID playerId) {
         sessions.computeIfPresent(playerId, (id, session) ->
             session.resetTimer().withState(SessionState.LISTENING)
         );
+
+        // 清除 ActionBar（ActionExecutor 的台词渲染会覆盖，但异常路径需要手动清理）
+        if (config.isThinkingActionBarEnabled()) {
+            Player player = plugin.getServer().getPlayer(playerId);
+            if (player != null && player.isOnline()) {
+                syncToMain(() ->
+                    player.spigot().sendMessage(
+                        net.md_5.bungee.api.ChatMessageType.ACTION_BAR,
+                        new net.md_5.bungee.api.chat.TextComponent("")
+                    )
+                );
+            }
+        }
     }
 
     /**
@@ -293,33 +331,56 @@ public class ChatCollector implements Listener {
     // ================================================================
 
     /**
-     * 启动超时检查器。
-     * 每 10 秒（200 ticks）扫描一次，驱逐超过 30 秒无活动的 LISTENING 会话。
-     * PROCESSING 状态不超时（等待 LLM，由 HTTP 超时控制）。
+     * 启动会话管理定时任务（合并超时检查 + ActionBar 提醒）。
+     * 每 3 秒（60 ticks）扫描一次：
+     * - LISTENING 超时：驱逐超过配置时间无活动的会话
+     * - LISTENING 提醒：定期发送 ActionBar 提示
+     * - PROCESSING 状态不超时（等待 LLM，由 HTTP 超时控制）
      */
     private void startTimeoutChecker() {
         plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
             long now = System.currentTimeMillis();
+            long timeoutMs = (long) config.getChatSessionTimeoutSeconds() * 1000L;
+            long reminderIntervalMs = (long) config.getChatReminderIntervalSeconds() * 1000L;
+            boolean reminderEnabled = config.isChatReminderEnabled();
 
             sessions.entrySet().removeIf(entry -> {
+                UUID   playerId = entry.getKey();
                 ListeningSession session = entry.getValue();
+                Player player = plugin.getServer().getPlayer(playerId);
 
-                // PROCESSING 状态不做超时处理
-                if (session.state() == SessionState.PROCESSING) return false;
+                if (player == null || !player.isOnline()) return true;
 
-                boolean timedOut = (now - session.startTimeMs()) > LISTEN_TIMEOUT_MS;
-                if (timedOut) {
-                    Player player = plugin.getServer().getPlayer(entry.getKey());
-                    if (player != null && player.isOnline()) {
-                        player.sendMessage("§7[对话] §e长时间未说话，对话已自动结束。");
-                        player.resetTitle();
-                    }
-                    logger.info("[ChatCollector] 会话超时 | UUID: " + entry.getKey());
+                // ---- PROCESSING：不超时，不提醒 ----
+                if (session.state() == SessionState.PROCESSING) {
+                    return false;
                 }
-                return timedOut;
+
+                // ---- LISTENING：超时检查 ----
+                boolean timedOut = (now - session.startTimeMs()) > timeoutMs;
+                if (timedOut) {
+                    player.sendMessage("§7[AgenticNPC] §e你结束了与 " + session.npcBrainName() + " 的对话。");
+                    player.resetTitle();
+                    logger.info("[ChatCollector] 会话超时 | 玩家: " + player.getName());
+                    return true;
+                }
+
+                // ---- LISTENING：ActionBar 提醒 ----
+                if (reminderEnabled && (now - session.lastReminderMs()) > reminderIntervalMs) {
+                    player.spigot().sendMessage(
+                        net.md_5.bungee.api.ChatMessageType.ACTION_BAR,
+                        new net.md_5.bungee.api.chat.TextComponent(
+                            "§e正在与 " + session.npcBrainName() + " 对话中..."
+                        )
+                    );
+                    // 更新提醒时间
+                    sessions.put(playerId, session.updateReminderTime(now));
+                }
+
+                return false;
             });
 
-        }, 200L, 200L); // delay=200ticks, period=200ticks
+        }, 60L, 60L); // delay=60ticks(3s), period=60ticks(3s)
     }
 
     /**

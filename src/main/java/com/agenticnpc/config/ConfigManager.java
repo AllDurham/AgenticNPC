@@ -142,7 +142,11 @@ public class ConfigManager {
     public boolean isInventoryContextEnabled() { return config.getBoolean("context.inventory-enabled", true); }
     public boolean isActionBarEnabled()        { return config.getBoolean("render.action-bar-enabled", true); }
     public boolean isSoundEnabled()            { return config.getBoolean("render.sound-enabled", true); }
-    public boolean isChatEchoEnabled()         { return config.getBoolean("chat.echo-player-message", true); }
+    public boolean isChatEchoEnabled()              { return config.getBoolean("chat.echo-player-message", true); }
+    public int     getChatSessionTimeoutSeconds()   { return config.getInt("chat.session-timeout-seconds", 45); }
+    public boolean isChatReminderEnabled()          { return config.getBoolean("chat.session-reminder-enabled", true); }
+    public int     getChatReminderIntervalSeconds()  { return config.getInt("chat.session-reminder-interval-seconds", 5); }
+    public boolean isThinkingActionBarEnabled()      { return config.getBoolean("chat.thinking-actionbar-enabled", true); }
     public String  getFallbackDialogue()       { return config.getString("fallback.dialogue", "..."); }
     public boolean isDebugMode()               { return config.getBoolean("debug", false); }
 

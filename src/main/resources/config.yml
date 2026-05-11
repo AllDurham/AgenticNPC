@@ -45,7 +45,11 @@ context:
 
 # ---- 聊天配置 ----
 chat:
-  echo-player-message: true   # AI 会话中回显玩家自己的消息
+  echo-player-message: true              # AI 会话中回显玩家自己的消息
+  session-timeout-seconds: 45            # LISTENING 状态无输入自动退出
+  session-reminder-enabled: true         # LISTENING 状态定期 ActionBar 提醒
+  session-reminder-interval-seconds: 5   # 提醒间隔
+  thinking-actionbar-enabled: true       # PROCESSING 时显示"正在思考..."ActionBar
 
 # ---- 渲染配置 ----
 render:
