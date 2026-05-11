@@ -45,22 +45,23 @@ public class ChatCollector implements Listener {
         String       npcBrainId,
         String       npcBrainName,
         Entity       npcEntity,
-        long         startTimeMs,
+        long         lastActivityMs,   // 最后活动时间（用于超时判断）
         long         lastReminderMs,
         SessionState state
     ) {
         ListeningSession withState(SessionState newState) {
-            return new ListeningSession(npcBrainId, npcBrainName, npcEntity, startTimeMs, lastReminderMs, newState);
+            return new ListeningSession(npcBrainId, npcBrainName, npcEntity, lastActivityMs, lastReminderMs, newState);
         }
 
-        ListeningSession resetTimer() {
+        /** 刷新活动时间（玩家发消息 或 LLM 响应完成后调用） */
+        ListeningSession touch() {
             return new ListeningSession(npcBrainId, npcBrainName, npcEntity,
                 System.currentTimeMillis(), lastReminderMs, state);
         }
 
         ListeningSession updateReminderTime(long now) {
             return new ListeningSession(npcBrainId, npcBrainName, npcEntity,
-                startTimeMs, now, state);
+                lastActivityMs, now, state);
         }
     }
 
@@ -115,11 +116,12 @@ public class ChatCollector implements Listener {
             .map(b -> b.name())
             .orElse("NPC");
 
+        long now = System.currentTimeMillis();
         sessions.put(playerId, new ListeningSession(
             brainId,
             brainName,
             npcEntity,
-            System.currentTimeMillis(),
+            now,
             0L,
             SessionState.LISTENING
         ));
@@ -168,7 +170,7 @@ public class ChatCollector implements Listener {
      */
     public void markListeningAfterResponse(UUID playerId) {
         sessions.computeIfPresent(playerId, (id, session) ->
-            session.resetTimer().withState(SessionState.LISTENING)
+            session.touch().withState(SessionState.LISTENING)
         );
 
         // 清除 ActionBar（ActionExecutor 的台词渲染会覆盖，但异常路径需要手动清理）
@@ -178,7 +180,7 @@ public class ChatCollector implements Listener {
                 syncToMain(() ->
                     player.spigot().sendMessage(
                         net.md_5.bungee.api.ChatMessageType.ACTION_BAR,
-                        new net.md_5.bungee.api.chat.TextComponent("")
+                        new net.md_5.bungee.api.chat.TextComponent(" ")
                     )
                 );
             }
@@ -237,6 +239,9 @@ public class ChatCollector implements Listener {
             player.sendMessage("§7NPC 正在思考，请稍候...");
             return;
         }
+
+        // 刷新活动时间（防止聊着聊着突然超时）
+        sessions.computeIfPresent(playerId, (id, s) -> s.touch());
 
         // ---- 输入清洗（在异步线程执行，符合要求）----
         SanitizeResult sanitized = sanitizer.sanitize(rawInput, player.getName());
@@ -356,8 +361,8 @@ public class ChatCollector implements Listener {
                     return false;
                 }
 
-                // ---- LISTENING：超时检查 ----
-                boolean timedOut = (now - session.startTimeMs()) > timeoutMs;
+                // ---- LISTENING：超时检查（基于最后活动时间）----
+                boolean timedOut = (now - session.lastActivityMs()) > timeoutMs;
                 if (timedOut) {
                     player.sendMessage("§7[AgenticNPC] §e你结束了与 " + session.npcBrainName() + " 的对话。");
                     player.resetTitle();
