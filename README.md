@@ -1,94 +1,78 @@
 # AgenticNPC
 
-AI-driven NPC Agent system for Minecraft — powered by LLM with full-pipeline observability.
+**基于 LLM 的 Minecraft 智能 NPC Agent 系统** | **AI-Driven NPC Agent System for Minecraft**
 
-AgenticNPC transforms static NPC dialogue trees into intelligent, context-aware agents. Each NPC uses a **5-stage decision pipeline** to understand player intent, reason through LLM, validate safety, and execute in-game actions — all with production-grade observability and fault tolerance.
+---
 
-## Architecture
+## 中文
+
+### 这是什么
+
+AgenticNPC 让 Minecraft 服务器中的 NPC 具备 AI 对话与自主行为能力。NPC 不再是固定对话树，而是能理解玩家自然语言、根据上下文动态决策、并执行游戏内动作（给予物品、传送、施加效果等）的智能 Agent。
+
+### 核心架构
+
+每次玩家与 NPC 交互，经过一条 **5 阶段 Pipeline**：
 
 ```
-Player Input
-    │
-    ▼
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│ GuardStage  │────▶│ PromptStage │────▶│  LLMStage   │────▶│ResponseStage│────▶│ExecutionStage│
-│             │     │             │     │             │     │             │     │             │
-│ Rate limit  │     │ Dynamic     │     │ Circuit     │     │ JSON parse  │     │ Memory      │
-│ Semantic    │     │ prompt      │     │ breaker     │     │ Action      │     │ persist     │
-│ injection   │     │ assembly    │     │ LLM call    │     │ validate    │     │ Audit log   │
-│ defense     │     │ (9 context  │     │ Token       │     │ Item safety │     │ Metrics     │
-│             │     │  sections)  │     │ tracking    │     │ check       │     │ Game action │
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
-    │                    │                    │                    │                    │
-    └────────────────────┴────────────────────┴────────────────────┴────────────────────┘
-                              TraceId (12-char UUID) flows through all stages
+玩家输入 → 安全门控 → Prompt 组装 → LLM 推理 → 响应校验 → 动作执行
+         GuardStage  PromptStage  LLMStage  ResponseStage ExecutionStage
 ```
 
-## Key Features
+每个阶段独立可观测，带全链路 TraceId 追踪。
 
-### Agent Pipeline (v1.4)
+### 核心特性
 
-- **5-Stage Pipeline** — Guard → Prompt → LLM → Response → Execution, each stage independently observable
-- **StageException vs Short-Circuit** — real failures (timeout, crash) vs business rejects (rate limit, validation) handled separately
-- **Per-stage latency tracking** — EnumMap-based latency recording for each pipeline stage
+**Pipeline 架构 (v1.4)**
+- 5 阶段串行决策链，每阶段独立 latency 追踪
+- 正常业务拒绝（限流/校验失败）与真异常（超时/崩溃）分开处理
+- Pipeline Snapshot 环形缓冲区，记录最近 100 次执行的全阶段耗时
 
-### Full-Chain Observability
+**全链路可观测**
+- 每次交互生成 12 位 TraceId，贯穿审计日志 / 指标 / Prompt 快照 / 日志
+- 9 段 Token 分解：system / profile / summary / emotion / playerInfo / actions / format / history / input
+- Web 控制台：实时 Dashboard + Prompt 决策快照浏览器
 
-- **TraceId** — 12-char short UUID generated per interaction, flows through audit / metrics / prompt snapshots / logs
-- **9-Section Token Breakdown** — system / profile / summary / emotion / playerInfo / actions / format / history / input
-- **Pipeline Snapshot Ring Buffer** — last 100 pipeline executions with per-stage latency
-- **Web Console** — real-time dashboard + prompt decision viewer (Javalin + cookie auth)
+**Prompt 变体实验系统 (v1.4-c)**
+- 配置切换 `prompt.variant: current | slim-v1`，A/B 对比不同 prompt 策略
+- Per-variant 指标：平均 Token、Fallback 率、Action 成功率、平均延迟
+- 固定成本（format + actions）与动态上下文分离追踪，70% 超预算预警
 
-### Prompt Variant Experimentation (v1.4-c)
+**6 层安全防御**
+1. 速率限制（本地 / Redis 双后端）
+2. 语义注入检测（SemanticGuard 二次 LLM 调用）
+3. 动作白名单校验（ActionValidator）
+4. 物品安全检查（ItemSafetyGuard）
+5. 熔断器自动降级（CircuitBreaker）
+6. 输入净化（InputSanitizer）
 
-- **A/B prompt testing** — `prompt.variant: current | slim-v1` in config
-- **Per-variant metrics** — avg tokens, fallback rate, action success rate, avg latency
-- **Fixed cost tracking** — `formatTokens + actionTokens` isolated from dynamic context
-- **70% warning** — highlights when fixed prompt cost dominates total tokens
+**NPC 智能能力**
+- 长期记忆：每玩家每 NPC 的对话历史，自动压缩摘要
+- 情绪系统：5 级情绪变化（敌对 → 警惕 → 中立 → 友善 → 忠诚），影响 NPC 语气
+- 玩家画像：管理员可写入永久备注，NPC 优先参考
+- 6 种动作类型：GIVE_ITEM / TELEPORT / GIVE_EFFECT / SEND_TITLE / PLAY_SOUND / GIVE_XP
 
-### 6-Layer Security
+**容错设计**
+- 记忆 / 审计为降级组件，故障不阻断 NPC 回复
+- 5 种 LLM 响应解析兜底策略（标准 JSON / Markdown 剥离 / 括号提取 / 纯文本包装 / 空响应处理）
+- Pipeline 任意阶段失败自动恢复玩家会话状态（不卡死）
 
-1. **Rate Limiting** — per-player, local or Redis-backed
-2. **Semantic Injection Guard** — secondary LLM call detects prompt injection attempts
-3. **Action Validator** — whitelist-based action + parameter validation
-4. **Item Safety Guard** — GIVE_ITEM safety checks
-5. **Circuit Breaker** — auto-disables LLM calls on consecutive failures
-6. **Input Sanitizer** — strips injection patterns before prompt assembly
+### 快速开始
 
-### NPC Intelligence
+**前置条件：** Minecraft 服务器（Spigot/Paper 1.13+）、Java 17、LLM API Key
 
-- **Long-term Memory** — per-player per-NPC conversation history with automatic compression
-- **Emotion System** — 5-level emotion (HOSTILE → WARY → NEUTRAL → FRIENDLY → DEVOTED) that influences NPC tone
-- **Player Profiles** — admin-managed persistent player notes, highest priority in prompt context
-- **6 Action Types** — GIVE_ITEM, TELEPORT, GIVE_EFFECT, SEND_TITLE, PLAY_SOUND, GIVE_XP
+```bash
+# 1. 将 JAR 放入 plugins/ 目录
+# 2. 启动服务器生成配置文件
+# 3. 编辑 plugins/AgenticNPC/config.yml，填入 API Key
+# 4. 重启服务器
+# 5. 游戏内绑定 NPC
+/anpc bind <实体> <brain_id>
+```
 
-### Fault Tolerance
-
-- **Degraded components** — memory/audit failures don't block NPC responses
-- **5 parser fallback strategies** — standard JSON, markdown strip, bracket extraction, plaintext wrap, empty response handling
-- **Circuit breaker** — auto-recovers after configured timeout
-- **Player state recovery** — LISTENING state restored on any pipeline failure (no stuck sessions)
-
-## Quick Start
-
-### Prerequisites
-
-- Minecraft Server (Spigot/Paper 1.13+)
-- Java 17+
-- DeepSeek API key (or any OpenAI-compatible endpoint)
-
-### Install
-
-1. Download `agentic-npc-1.0-SNAPSHOT.jar` from releases
-2. Place in `plugins/` folder
-3. Start server to generate `plugins/AgenticNPC/config.yml`
-4. Edit `config.yml` — set your LLM API key
-5. Restart server
-
-### Configure an NPC
+### NPC 配置示例
 
 ```yaml
-# In config.yml
 brains:
   - id: "village_merchant"
     name: "老张"
@@ -96,38 +80,24 @@ brains:
       你是村庄里的商人老张，精明但不失厚道。
       你对熟客会给予折扣，对新客人保持礼貌距离。
     fallback-dialogue: "让我想想..."
-    allowed-action-types:
-      - "GIVE_ITEM"
-      - "PLAY_SOUND"
-    allowed-items:
-      - "BREAD"
-      - "IRON_INGOT"
-      - "DIAMOND"
-    dialogue-sound: "ENTITY_VILLAGER_TRADE"
+    allowed-action-types: ["GIVE_ITEM", "PLAY_SOUND"]
+    allowed-items: ["BREAD", "IRON_INGOT", "DIAMOND"]
 ```
 
-### Bind to an Entity
+### 命令
 
-```
-/anpc bind <entity> <brain_id>
-```
+| 命令 | 说明 |
+|------|------|
+| `/anpc bind <实体> <brain>` | 绑定实体到 brain 配置 |
+| `/anpc unbind <实体>` | 解绑实体 |
+| `/anpc stress <次数>` | Pipeline 压力测试（OP，上限 200） |
+| `/anpc emotion <玩家> <brain> <等级>` | 设置玩家情绪等级 |
+| `/anpc profile <玩家> <brain> <文本>` | 设置玩家画像备注 |
+| `/anpc reload` | 重载配置 |
+| `/anpc status` | 系统状态 |
+| `/anpc health` | 健康指标 |
 
-Point at any NPC entity and run the command. The NPC is now AI-driven.
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `/anpc bind <entity> <brain>` | Bind an entity to a brain config |
-| `/anpc unbind <entity>` | Unbind an entity |
-| `/anpc stress <count>` | Pipeline stress test (OP only, max 200) |
-| `/anpc emotion <player> <brain> <level>` | Set player emotion level |
-| `/anpc profile <player> <brain> <text>` | Set player profile notes |
-| `/anpc reload` | Reload configuration |
-| `/anpc status` | Show system status |
-| `/anpc health` | Show health metrics |
-
-## Web Console
+### Web 控制台
 
 ```yaml
 web-console:
@@ -137,50 +107,132 @@ web-console:
   auth-token: "your-secret-token"
 ```
 
+- **Dashboard** — 系统状态、Token 指标、错误指标、Pipeline 指标、Variant 指标、最近交互
+- **Prompt Viewer** — 最近 100 条 Prompt 决策，含完整 system prompt、Token 分解、Fallback 类型、Variant 信息
+
+### 技术栈
+
+| 层 | 技术 |
+|----|------|
+| 运行时 | Java 17, Spigot API 1.13+ |
+| LLM | DeepSeek API（兼容 OpenAI 接口） |
+| 存储 | SQLite / MySQL（记忆持久化）、Redis（可选，跨服限流） |
+| Web | Javalin 5 + 自定义 Gson JSON Mapper |
+| 测试 | JUnit 5 + Mockito，173 个测试用例 |
+
+---
+
+## English
+
+### What is AgenticNPC
+
+AgenticNPC is an AI-driven NPC Agent system for Minecraft servers. Instead of static dialogue trees, NPCs powered by AgenticNPC understand natural language, make context-aware decisions, and execute in-game actions — acting as intelligent agents with memory, emotion, and personality.
+
+### Architecture
+
+Every player-NPC interaction flows through a **5-stage Pipeline**:
+
+```
+Player Input → Guard → Prompt → LLM → Response → Execution
+              (rate    (9-section   (circuit  (JSON parse   (memory +
+               limit,   dynamic     breaker,  action check, audit,
+               inject   prompt      token     item safety)  game
+               detect)  assembly)   tracking)               action)
+```
+
+Each stage is independently observable with full-chain TraceId tracing.
+
+### Key Features
+
+**Pipeline Architecture (v1.4)**
+- 5-stage serial decision chain with per-stage latency tracking
+- Business rejects (rate limit / validation) vs real failures (timeout / crash) handled separately
+- Pipeline Snapshot ring buffer recording last 100 executions with per-stage timing
+
+**Full-Chain Observability**
+- 12-char TraceId per interaction, flowing through audit / metrics / prompt snapshots / logs
+- 9-section Token Breakdown: system / profile / summary / emotion / playerInfo / actions / format / history / input
+- Web Console: real-time Dashboard + Prompt decision snapshot viewer
+
+**Prompt Variant Experimentation (v1.4-c)**
+- Config-switchable `prompt.variant: current | slim-v1` for A/B prompt testing
+- Per-variant metrics: avg tokens, fallback rate, action success rate, avg latency
+- Fixed cost (format + actions) isolated from dynamic context, with 70% over-budget warning
+
+**6-Layer Security**
+1. Rate limiting (local / Redis dual backend)
+2. Semantic injection detection (secondary LLM call via SemanticGuard)
+3. Action whitelist validation (ActionValidator)
+4. Item safety checking (ItemSafetyGuard)
+5. Circuit breaker auto-degradation
+6. Input sanitization (InputSanitizer)
+
+**NPC Intelligence**
+- Long-term memory: per-player per-NPC conversation history with automatic compression
+- Emotion system: 5-level emotion (HOSTILE → WARY → NEUTRAL → FRIENDLY → DEVOTED) affecting NPC tone
+- Player profiles: admin-managed persistent notes, highest priority in prompt context
+- 6 action types: GIVE_ITEM / TELEPORT / GIVE_EFFECT / SEND_TITLE / PLAY_SOUND / GIVE_XP
+
+**Fault Tolerance**
+- Memory / audit as degraded components — failures don't block NPC responses
+- 5 LLM response parsing fallback strategies
+- Automatic player session state recovery on any pipeline failure
+
+### Quick Start
+
+**Requirements:** Minecraft server (Spigot/Paper 1.13+), Java 17, LLM API key
+
+```bash
+# 1. Place JAR in plugins/ directory
+# 2. Start server to generate config
+# 3. Edit plugins/AgenticNPC/config.yml with your API key
+# 4. Restart server
+# 5. Bind NPC in-game
+/anpc bind <entity> <brain_id>
+```
+
+### Brain Config Example
+
+```yaml
+brains:
+  - id: "village_merchant"
+    name: "Old Zhang"
+    personality: >
+      You are Old Zhang, a shrewd but fair village merchant.
+      You offer discounts to regulars and stay polite with newcomers.
+    fallback-dialogue: "Let me think..."
+    allowed-action-types: ["GIVE_ITEM", "PLAY_SOUND"]
+    allowed-items: ["BREAD", "IRON_INGOT", "DIAMOND"]
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/anpc bind <entity> <brain>` | Bind entity to brain config |
+| `/anpc unbind <entity>` | Unbind entity |
+| `/anpc stress <count>` | Pipeline stress test (OP only, max 200) |
+| `/anpc emotion <player> <brain> <level>` | Set player emotion level |
+| `/anpc profile <player> <brain> <text>` | Set player profile notes |
+| `/anpc reload` | Reload configuration |
+| `/anpc status` | System status |
+| `/anpc health` | Health metrics |
+
+### Web Console
+
 - **Dashboard** — system status, token metrics, error metrics, pipeline metrics, variant metrics, recent interactions
 - **Prompt Viewer** — last 100 prompt decisions with full system prompt, token breakdown, fallback type, variant info
 
-## Tech Stack
+### Tech Stack
 
-- **Runtime**: Java 17, Spigot API 1.13+
-- **LLM**: DeepSeek API (OpenAI-compatible)
-- **Storage**: SQLite / MySQL (memory persistence), Redis (optional, cross-server rate limiting)
-- **Web**: Javalin 5 + custom Gson JSON mapper
-- **Testing**: JUnit 5 + Mockito (173 tests)
+| Layer | Technology |
+|-------|-----------|
+| Runtime | Java 17, Spigot API 1.13+ |
+| LLM | DeepSeek API (OpenAI-compatible) |
+| Storage | SQLite / MySQL (memory), Redis (optional, cross-server rate limiting) |
+| Web | Javalin 5 + custom Gson JSON Mapper |
+| Testing | JUnit 5 + Mockito, 173 test cases |
 
-## Project Structure
-
-```
-src/main/java/com/agenticnpc/
-├── AgenticNPCPlugin.java          # Plugin entry point
-├── audit/                          # JSONL audit logger
-├── command/                        # /anpc commands + stress test
-├── config/                         # ConfigManager + BrainConfig
-├── console/                        # Web console + metrics + stores
-│   ├── WebConsole.java            #   Javalin server + auth
-│   ├── MetricsCollector.java      #   LongAdder + ring buffer
-│   ├── PromptSnapshotStore.java   #   Prompt decision ring buffer
-│   └── RecentInteractionStore.java
-├── context/                        # Prompt assembly
-│   └── PromptBuilder.java         #   9-section prompt + variant switch
-├── dispatch/                       # Pipeline orchestrator
-│   ├── AsyncDispatcher.java       #   Async scheduling + recovery
-│   └── pipeline/                  #   5-stage pipeline framework
-│       ├── PipelineContext.java
-│       ├── PipelineExecutor.java
-│       └── stages/                #   Guard/Prompt/LLM/Response/Execution
-├── emotion/                        # 5-level emotion system
-├── executor/                       # Bukkit main-thread action executor
-├── gateway/                        # Input/output validation
-│   ├── LLMResponseParser.java     #   5 fallback strategies
-│   ├── ActionValidator.java       #   Whitelist validation
-│   ├── ItemSafetyGuard.java       #   Item safety checks
-│   └── SemanticGuard.java         #   Injection detection
-├── hook/                           # Bukkit event listeners
-├── memory/                         # Memory + compression + profiles
-└── model/                          # Data models (records)
-```
-
-## License
+### License
 
 MIT
