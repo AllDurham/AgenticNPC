@@ -4,7 +4,12 @@ import com.agenticnpc.audit.AuditLogger;
 import com.agenticnpc.audit.TokenTracker;
 import com.agenticnpc.config.BrainConfig;
 import com.agenticnpc.config.ConfigManager;
+import com.agenticnpc.console.MetricsCollector;
+import com.agenticnpc.console.PromptSnapshotStore;
+import com.agenticnpc.console.RecentInteractionStore;
 import com.agenticnpc.context.PromptBuilder;
+import com.agenticnpc.dispatch.pipeline.*;
+import com.agenticnpc.dispatch.pipeline.stages.*;
 import com.agenticnpc.gateway.ActionValidator;
 import com.agenticnpc.gateway.ItemSafetyGuard;
 import com.agenticnpc.gateway.LLMResponseParser;
@@ -21,32 +26,45 @@ import org.bukkit.plugin.Plugin;
 import java.util.logging.Logger;
 
 /**
- * 异步调度器（核心管线实现）。
+ * 异步调度器（核心管线编排器）。
  *
- * 完整处理链路（全部在 Bukkit 异步线程执行，除最后一步）：
- *   submit() → 限流 → Prompt → 熔断器 → LLM → 解析 → 校验 → 安全检查
- *   → 记忆追加 → 审计日志 → Token 统计 → 主线程执行
+ * 职责：
+ * 1. submit() — async scheduling
+ * 2. processAsync() — 创建 PipelineContext → PipelineExecutor.run(ctx) → 处理结果
+ * 3. 顶层异常处理 + 短路恢复
+ * 4. 主线程执行（仅 syncToMain 部分）
+ *
+ * 具体业务步骤由各 PipelineStage 承担。
  */
 public class AsyncDispatcher implements InteractionPipeline {
 
+    private final ConfigManager config;
+    private final Plugin        plugin;
+    private final Logger        logger;
+
+    // Pipeline infrastructure
+    private PipelineExecutor pipelineExecutor;
+    private LLMClient        llmClient;  // 保留引用以支持 setLLMClient 热重载
+
+    // 用于主线程执行和恢复
+    private ChatCollector     chatCollector;
+    private ExecutionCallback executionCallback;
+    private MetricsCollector  metricsCollector;
+    private HealthCommandAccessor healthCommand;
+
+    // 阶段依赖（用于重建 pipeline）
     private final RateLimiter        rateLimiter;
     private final CircuitBreaker     circuitBreaker;
-    private LLMClient                llmClient;
     private final PromptBuilder      promptBuilder;
     private final LLMResponseParser  responseParser;
     private final ActionValidator    actionValidator;
     private final ItemSafetyGuard    itemSafetyGuard;
     private final MemoryManager      memoryManager;
-    private final ConfigManager      config;
-    private final Plugin             plugin;
-    private final Logger             logger;
-
-    private ChatCollector    chatCollector;
-    private ExecutionCallback executionCallback;
-    private AuditLogger      auditLogger;
-    private TokenTracker     tokenTracker;
-    private SemanticGuard    semanticGuard;
-    private com.agenticnpc.command.HealthCommand healthCommand;
+    private AuditLogger              auditLogger;
+    private TokenTracker             tokenTracker;
+    private SemanticGuard            semanticGuard;
+    private RecentInteractionStore   interactionStore;
+    private PromptSnapshotStore      promptStore;
 
     public AsyncDispatcher(
             RateLimiter       rateLimiter,
@@ -75,6 +93,8 @@ public class AsyncDispatcher implements InteractionPipeline {
         this.logger          = logger;
     }
 
+    // ---- Setter methods for post-construction wiring ----
+
     public void setChatCollector(ChatCollector chatCollector) {
         this.chatCollector = chatCollector;
     }
@@ -85,226 +105,203 @@ public class AsyncDispatcher implements InteractionPipeline {
 
     public void setAuditLogger(AuditLogger auditLogger) {
         this.auditLogger = auditLogger;
+        rebuildPipeline();
     }
 
     public void setTokenTracker(TokenTracker tokenTracker) {
         this.tokenTracker = tokenTracker;
+        rebuildPipeline();
     }
 
     public void setLLMClient(LLMClient llmClient) {
         this.llmClient = llmClient;
+        rebuildPipeline();
     }
 
     public void setSemanticGuard(SemanticGuard semanticGuard) {
         this.semanticGuard = semanticGuard;
+        rebuildPipeline();
     }
 
     public void setHealthCommand(com.agenticnpc.command.HealthCommand healthCommand) {
-        this.healthCommand = healthCommand;
+        this.healthCommand = healthCommand != null ? healthCommand::recordError : null;
+    }
+
+    public void setMetricsCollector(MetricsCollector metricsCollector) {
+        this.metricsCollector = metricsCollector;
+        rebuildPipeline();
+    }
+
+    public void setInteractionStore(RecentInteractionStore interactionStore) {
+        this.interactionStore = interactionStore;
+        rebuildPipeline();
+    }
+
+    public void setPromptStore(PromptSnapshotStore promptStore) {
+        this.promptStore = promptStore;
+        rebuildPipeline();
     }
 
     public CircuitBreaker getCircuitBreaker() {
         return circuitBreaker;
     }
 
+    // ---- Core pipeline orchestration ----
+
     @Override
     public void submit(InteractionEvent event) {
-        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () ->
-            processAsync(event)
-        );
+        if (metricsCollector != null) metricsCollector.setQueueDepth(
+            metricsCollector.snapshot().queueDepth() + 1);
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            if (metricsCollector != null) {
+                metricsCollector.setQueueDepth(
+                    metricsCollector.snapshot().queueDepth() - 1);
+                metricsCollector.recordInflightStart();
+            }
+            try {
+                processAsync(event);
+            } finally {
+                if (metricsCollector != null) metricsCollector.recordInflightEnd();
+            }
+        });
     }
 
     private void processAsync(InteractionEvent event) {
         Player player  = event.player();
         String brainId = event.npcBrainId();
+        String traceId = event.traceId();
 
         BrainConfig brain = config.getBrainConfig(brainId).orElse(null);
         if (brain == null) {
-            logger.warning("[Dispatcher] 找不到 BrainConfig: " + brainId);
+            logger.warning(String.format("[%s][Dispatcher] 找不到 BrainConfig: %s", traceId, brainId));
             restoreListening(event);
             return;
         }
 
-        // ---- Step 1: 限流检查 ----
-        var limitResult = rateLimiter.tryAcquire(player.getUniqueId(), brainId);
-        if (!limitResult.allowed()) {
-            if (auditLogger != null) {
-                auditLogger.logRateLimited(player.getUniqueId(), player.getName(), brainId);
-            }
-            syncToMain(() ->
-                player.sendMessage("§7[" + brain.name() + "] §e" + limitResult.rejectMessage())
-            );
-            restoreListening(event);
-            return;
-        }
+        // 创建 pipeline context
+        PipelineContext ctx = new PipelineContext(traceId, event, brain);
+        ctx.pipelineStartMs = System.currentTimeMillis();
 
-        // ---- Step 1.5: 语义注入防御 ----
-        if (semanticGuard != null) {
-            var verdict = semanticGuard.check(event.sanitizedInput());
-            switch (verdict) {
-                case BLOCKED -> {
-                    logger.warning("[Dispatcher][SemanticGuard] BLOCKED | 玩家: " + player.getName());
-                    if (auditLogger != null) {
-                        auditLogger.logSemanticGuardBlocked(
-                            player.getUniqueId(), player.getName(), brainId, event.sanitizedInput());
-                    }
-                    if (healthCommand != null) healthCommand.recordError();
-                    syncToMain(() ->
-                        player.sendMessage("§7[" + brain.name() + "] §e输入被安全系统拦截。")
-                    );
-                    restoreListening(event);
-                    return;
-                }
-                case SUSPICIOUS -> {
-                    logger.warning("[Dispatcher][SemanticGuard] SUSPICIOUS | 玩家: " + player.getName());
-                    if (auditLogger != null) {
-                        auditLogger.logSemanticGuardSuspicious(
-                            player.getUniqueId(), player.getName(), brainId, event.sanitizedInput());
-                    }
-                    // 不拦截，继续执行
-                }
-                case SAFE -> { /* 正常继续 */ }
-            }
-        }
-
-        // ---- Step 2: 构建 Prompt ----
-        PromptPackage promptPackage;
         try {
-            promptPackage = promptBuilder.build(event);
+            // 执行 pipeline
+            if (pipelineExecutor == null) {
+                rebuildPipeline();
+            }
+            pipelineExecutor.run(ctx);
         } catch (Exception e) {
-            logger.warning("[Dispatcher] Prompt 构建失败: " + e.getMessage());
-            sendFallback(player, brain);
-            restoreListening(event);
+            // 顶层异常兜底
+            logger.warning(String.format("[%s][Dispatcher] Pipeline 异常: %s", traceId, e.getMessage()));
+            ctx.shortCircuit = true;
+            ctx.failedStage = PipelineStageType.EXECUTION;
+            ctx.failureReason = "Pipeline 异常: " + e.getMessage();
+        }
+
+        // 处理结果
+        if (ctx.shortCircuit) {
+            // 短路恢复：发降级消息 + 恢复 LISTENING
+            handleShortCircuit(ctx, player, brain);
             return;
         }
 
-        // ---- Step 3: 通过熔断器发起 LLM 请求 ----
-        circuitBreaker.execute(
-            () -> llmClient.sendAsync(promptPackage),
-            () -> null
-        ).whenComplete((llmResult, throwable) -> {
-            if (throwable != null) {
-                logger.warning("[Dispatcher] LLM 请求异常: " + throwable.getMessage());
-                if (auditLogger != null) {
-                    auditLogger.logParseFailed(player.getUniqueId(), player.getName(),
-                        brainId, throwable.getMessage());
-                }
-                if (healthCommand != null) healthCommand.recordError();
-                sendFallback(player, brain);
-                restoreListening(event);
-                return;
-            }
+        // 成功路径：主线程执行（仅 Bukkit API 部分 sync）
+        final LLMResponse response = ctx.response;
+        final ValidationResult validation = ctx.validation;
+        final String finalTraceId = traceId;
 
-            if (llmResult == null) {
-                if (auditLogger != null) {
-                    auditLogger.logCircuitOpen(brainId, 0);
-                }
-                if (healthCommand != null) healthCommand.recordError();
-                sendFallback(player, brain);
-                restoreListening(event);
-                return;
-            }
+        logger.info(String.format("[%s][Dispatcher] Pipeline 完成，准备主线程执行 | callback=%s | response=%s | validation=%s",
+            traceId,
+            executionCallback != null ? executionCallback.getClass().getSimpleName() : "NULL",
+            response != null ? "ok" : "NULL",
+            validation != null ? "ok" : "NULL"
+        ));
 
-            // Token 统计
-            if (tokenTracker != null) {
-                tokenTracker.track(llmResult.fullResponseBody(),
-                    player.getUniqueId(), player.getName(), brainId);
-            }
-
-            String rawContent = llmResult.contentText();
-
-            // ---- Step 4: 解析 LLM 响应 ----
-            var parsedOpt = responseParser.parse(rawContent);
-            if (parsedOpt.isEmpty()) {
-                if (auditLogger != null) {
-                    auditLogger.logParseFailed(player.getUniqueId(), player.getName(),
-                        brainId, rawContent);
-                }
-                memoryManager.appendAndPersist(
-                    player.getUniqueId(), brainId,
-                    new ChatMessage("user", event.sanitizedInput()),
-                    new ChatMessage("assistant", "...")
-                );
-                syncToMain(() ->
-                    player.sendMessage("§e[" + brain.name() + "] §7...（沉默）")
-                );
-                restoreListening(event);
-                return;
-            }
-
-            LLMResponse response = parsedOpt.get();
-
-            // ---- Step 5: 动作校验 ----
-            ValidationResult validation = actionValidator.validate(response, brainId);
-            if (!validation.valid()) {
-                logger.warning("[Dispatcher] 动作校验失败: " + validation.failReason());
-                if (auditLogger != null) {
-                    auditLogger.logActionBlocked(player.getUniqueId(), player.getName(),
-                        brainId, validation.failReason(), validation.actionType());
-                }
-                sendDialogueOnly(player, response.dialogue(), brain);
-                restoreListening(event);
-                return;
-            }
-
-            // ---- Step 6: 物品安全检查 ----
-            ItemSafetyResult itemSafetyResult = null;
-            if (validation.actionType() == ActionType.GIVE_ITEM) {
-                itemSafetyResult = itemSafetyGuard.check(validation.parameters(), brainId);
-                if (!itemSafetyResult.safe()) {
-                    if (auditLogger != null) {
-                        auditLogger.logActionBlocked(player.getUniqueId(), player.getName(),
-                            brainId, itemSafetyResult.reason(), ActionType.GIVE_ITEM);
-                    }
-                    sendDialogueOnly(player, response.dialogue(), brain);
-                    restoreListening(event);
-                    return;
-                }
-            }
-
-            // ---- Step 7: 记忆追加 ----
-            memoryManager.appendAndPersist(
-                player.getUniqueId(), brainId,
-                new ChatMessage("user", event.sanitizedInput()),
-                new ChatMessage("assistant", response.dialogue())
-            );
-
-            // ---- 审计日志 ----
-            if (auditLogger != null) {
-                auditLogger.logDialogueSuccess(
-                    player.getUniqueId(), player.getName(), brainId,
-                    event.sanitizedInput(), response.dialogue(),
-                    validation.actionType(),
-                    validation.parameters() != null ? validation.parameters().toString() : null
-                );
-            }
-
-            // ---- Step 8: 主线程执行 ----
-            final ItemSafetyResult finalItemResult = itemSafetyResult;
-            syncToMain(() -> {
+        syncToMain(() -> {
+            try {
+                logger.info(String.format("[%s][Dispatcher] 主线程回调执行 | callback=%s",
+                    finalTraceId,
+                    executionCallback != null ? executionCallback.getClass().getSimpleName() : "NULL"
+                ));
                 if (executionCallback != null) {
-                    executionCallback.execute(player, response, validation,
-                        finalItemResult, brain);
+                    executionCallback.execute(finalTraceId, player, response, validation, ctx.itemSafetyResult, brain);
                 } else {
                     player.sendMessage("§e[" + brain.name() + "] §f" + response.dialogue());
                 }
                 chatCollector.markListeningAfterResponse(player.getUniqueId());
-            });
+            } catch (Exception e) {
+                logger.severe(String.format("[%s][Dispatcher] 主线程回调异常: %s", finalTraceId, e.getMessage()));
+                e.printStackTrace();
+                chatCollector.markListeningAfterResponse(player.getUniqueId());
+            }
         });
+
+        // 记录 health error（如果有 healthCommand 且 failedStage != null）
+        if (ctx.failedStage != null && healthCommand != null) {
+            healthCommand.recordError();
+        }
     }
+
+    /**
+     * 短路恢复：发降级消息 + 恢复 LISTENING 状态。
+     * 保证玩家不会卡死在 PROCESSING。
+     */
+    private void handleShortCircuit(PipelineContext ctx, Player player, BrainConfig brain) {
+        String traceId = ctx.traceId;
+        String failedStageName = ctx.failedStage != null ? ctx.failedStage.name() : "unknown";
+
+        // 记录 metrics
+        if (metricsCollector != null) {
+            metricsCollector.recordFailure();
+            if (ctx.failedStage != null) {
+                metricsCollector.recordStageFailure(ctx.failedStage);
+            }
+            // 记录已完成 stage 的 latency
+            for (var entry : ctx.stageLatencyMs.entrySet()) {
+                metricsCollector.recordStageLatency(entry.getKey(), entry.getValue());
+            }
+        }
+
+        // Health error tracking
+        if (healthCommand != null) {
+            healthCommand.recordError();
+        }
+
+        // 发送降级消息
+        if (ctx.response != null && ctx.response.dialogue() != null && !ctx.response.dialogue().isBlank()) {
+            // 有 dialogue 但校验失败 → 发 dialogue
+            syncToMain(() -> player.sendMessage("§e[" + brain.name() + "] §f" + ctx.response.dialogue()));
+        } else {
+            // 无 dialogue → 发 fallback
+            sendFallback(player, brain);
+        }
+
+        // 恢复 LISTENING 状态
+        restoreListening(ctx.event);
+
+        logger.info(String.format("[%s][Dispatcher] 短路恢复 | stage=%s | reason=%s",
+            traceId, failedStageName, ctx.failureReason));
+    }
+
+    // ---- Pipeline rebuild (when dependencies change) ----
+
+    private synchronized void rebuildPipeline() {
+        PipelineStage[] stages = new PipelineStage[] {
+            new GuardStage(rateLimiter, semanticGuard, auditLogger, logger),
+            new PromptStage(promptBuilder, config, logger),
+            new LLMStage(circuitBreaker, llmClient, tokenTracker, auditLogger, logger),
+            new ResponseStage(responseParser, actionValidator, itemSafetyGuard,
+                              auditLogger, metricsCollector, logger),
+            new ExecutionStage(memoryManager, auditLogger, metricsCollector,
+                                interactionStore, promptStore, logger)
+        };
+        this.pipelineExecutor = new PipelineExecutor(stages, logger);
+    }
+
+    // ---- Utility methods ----
 
     private void sendFallback(Player player, BrainConfig brain) {
         String fallback = brain.fallbackDialogue() != null
             ? brain.fallbackDialogue() : config.getFallbackDialogue();
         syncToMain(() -> player.sendMessage("§e[" + brain.name() + "] §7" + fallback));
-    }
-
-    private void sendDialogueOnly(Player player, String dialogue, BrainConfig brain) {
-        if (dialogue != null && !dialogue.isBlank()) {
-            syncToMain(() -> player.sendMessage("§e[" + brain.name() + "] §f" + dialogue));
-        } else {
-            sendFallback(player, brain);
-        }
     }
 
     private void restoreListening(InteractionEvent event) {
@@ -319,7 +316,13 @@ public class AsyncDispatcher implements InteractionPipeline {
 
     @FunctionalInterface
     public interface ExecutionCallback {
-        void execute(Player player, LLMResponse response, ValidationResult validation,
+        void execute(String traceId, Player player, LLMResponse response, ValidationResult validation,
                      ItemSafetyResult itemSafetyResult, BrainConfig brain);
+    }
+
+    /** HealthCommand 访问器（避免直接依赖命令类） */
+    @FunctionalInterface
+    private interface HealthCommandAccessor {
+        void recordError();
     }
 }

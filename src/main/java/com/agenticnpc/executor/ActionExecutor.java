@@ -76,7 +76,7 @@ public class ActionExecutor implements ExecutionCallback {
     }
 
     @Override
-    public void execute(Player player,
+    public void execute(String traceId, Player player,
                         LLMResponse response,
                         ValidationResult validation,
                         ItemSafetyResult itemSafetyResult,
@@ -98,13 +98,13 @@ public class ActionExecutor implements ExecutionCallback {
                 executeGiveEffect(player, validation.parameters(), brain);
                 break;
             case SEND_TITLE:
-                executeSendTitle(player, validation.parameters(), brain);
+                executeSendTitle(traceId, player, validation.parameters(), brain);
                 break;
             case PLAY_SOUND:
-                executePlaySound(player, validation.parameters(), brain);
+                executePlaySound(traceId, player, validation.parameters(), brain);
                 break;
             case GIVE_XP:
-                executeGiveXp(player, validation.parameters(), brain);
+                executeGiveXp(traceId, player, validation.parameters(), brain);
                 break;
             default:
                 break;
@@ -250,7 +250,7 @@ public class ActionExecutor implements ExecutionCallback {
     // SEND_TITLE（标题发送）
     // ================================================================
 
-    private void executeSendTitle(Player player, com.agenticnpc.model.ActionParameters params, BrainConfig brain) {
+    private void executeSendTitle(String traceId, Player player, com.agenticnpc.model.ActionParameters params, BrainConfig brain) {
         if (params == null || params.title_text() == null || params.title_text().isBlank()) {
             logger.warning("[ActionExecutor] SEND_TITLE 参数不完整，跳过");
             return;
@@ -284,7 +284,7 @@ public class ActionExecutor implements ExecutionCallback {
 
         if (auditLogger != null) {
             auditLogger.logDialogueSuccess(
-                player.getUniqueId(), player.getName(), brain.id(),
+                traceId, player.getUniqueId(), player.getName(), brain.id(),
                 "SEND_TITLE: " + title + " / " + (subtitle != null ? subtitle : "-"),
                 null, ActionType.SEND_TITLE, null);
         }
@@ -294,7 +294,7 @@ public class ActionExecutor implements ExecutionCallback {
     // PLAY_SOUND（音效播放，含别名映射）
     // ================================================================
 
-    private void executePlaySound(Player player, com.agenticnpc.model.ActionParameters params, BrainConfig brain) {
+    private void executePlaySound(String traceId, Player player, com.agenticnpc.model.ActionParameters params, BrainConfig brain) {
         if (params == null || params.sound_name() == null || params.sound_name().isBlank()) {
             logger.warning("[ActionExecutor] PLAY_SOUND 参数不完整，跳过");
             return;
@@ -323,7 +323,7 @@ public class ActionExecutor implements ExecutionCallback {
 
         if (auditLogger != null) {
             auditLogger.logDialogueSuccess(
-                player.getUniqueId(), player.getName(), brain.id(),
+                traceId, player.getUniqueId(), player.getName(), brain.id(),
                 "PLAY_SOUND: " + soundName + " vol=" + volume + " pitch=" + pitch,
                 null, ActionType.PLAY_SOUND, soundName);
         }
@@ -351,7 +351,7 @@ public class ActionExecutor implements ExecutionCallback {
     // GIVE_XP（经验值给予）
     // ================================================================
 
-    private void executeGiveXp(Player player, com.agenticnpc.model.ActionParameters params, BrainConfig brain) {
+    private void executeGiveXp(String traceId, Player player, com.agenticnpc.model.ActionParameters params, BrainConfig brain) {
         if (params == null || params.xp_amount() == null || params.xp_amount() <= 0) {
             logger.warning("[ActionExecutor] GIVE_XP 参数无效，跳过");
             return;
@@ -381,7 +381,7 @@ public class ActionExecutor implements ExecutionCallback {
                 ? "GIVE_XP: " + requested + " -> " + actual + "（截断到上限 " + maxXp + "）"
                 : "GIVE_XP: " + actual;
             auditLogger.logDialogueSuccess(
-                player.getUniqueId(), player.getName(), brain.id(),
+                traceId, player.getUniqueId(), player.getName(), brain.id(),
                 detail, null, ActionType.GIVE_XP,
                 truncated ? requested + "->" + actual : String.valueOf(actual));
         }

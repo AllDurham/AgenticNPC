@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgenticNPC Console - Login</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, monospace; background: #0f1117; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .login-box { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 32px; width: 360px; text-align: center; }
+  .login-box h1 { font-size: 20px; color: #7c8aff; margin-bottom: 8px; }
+  .login-box p { font-size: 13px; color: #666; margin-bottom: 24px; }
+  .login-box input { width: 100%; padding: 10px 12px; background: #0f1117; border: 1px solid #2d3148; border-radius: 6px; color: #e0e0e0; font-size: 14px; margin-bottom: 16px; outline: none; }
+  .login-box input:focus { border-color: #7c8aff; }
+  .login-box button { width: 100%; padding: 10px; background: #7c8aff; color: #0f1117; border: none; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; }
+  .login-box button:hover { background: #5c6aff; }
+  .error { color: #f44336; font-size: 12px; margin-top: 8px; display: none; }
+</style>
+</head>
+<body>
+<div class="login-box">
+  <h1>AgenticNPC Console</h1>
+  <p>Enter your auth token to continue</p>
+  <form onsubmit="login(event)">
+    <input type="password" id="token" placeholder="Auth Token" autocomplete="off">
+    <button type="submit">Login</button>
+  </form>
+  <div class="error" id="error">Invalid token</div>
+</div>
+<script>
+async function login(e) {
+  e.preventDefault();
+  const token = document.getElementById('token').value;
+  if (!token) return;
+
+  // Test the token
+  try {
+    const res = await fetch('/api/metrics', {
+      headers: {'Authorization': 'Bearer ' + token}
+    });
+    if (res.ok) {
+      sessionStorage.setItem('anpc_token', token);
+      document.cookie = 'anpc_token=' + token + '; path=/; SameSite=Strict';
+      location.href = '/console';
+    } else {
+      document.getElementById('error').style.display = 'block';
+    }
+  } catch(err) {
+    document.getElementById('error').style.display = 'block';
+  }
+}
+</script>
+</body>
+</html>

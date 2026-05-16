@@ -201,6 +201,22 @@ public class ChatCollector implements Listener {
         return sessions.containsKey(playerId);
     }
 
+    /**
+     * 获取当前活跃会话数（用于 Dashboard 显示）。
+     */
+    public int getActiveSessionCount() {
+        return sessions.size();
+    }
+
+    /**
+     * 获取当前处于 PROCESSING 状态的会话数。
+     */
+    public int getProcessingCount() {
+        return (int) sessions.values().stream()
+            .filter(s -> s.state() == SessionState.PROCESSING)
+            .count();
+    }
+
     // ================================================================
     // 事件监听
     // ================================================================
@@ -250,9 +266,21 @@ public class ChatCollector implements Listener {
             return;
         }
 
-        // 对话日志
+        // 标记为处理中，防止重复提交
+        markProcessing(playerId);
+
+        // 提交到管线（仍在异步线程，后续处理层保持异步）
+        InteractionEvent interactionEvent = InteractionEvent.create(
+            player,
+            session.npcEntity(),
+            session.npcBrainId(),
+            sanitized.value()
+        );
+
+        // 对话日志（含 traceId）
         logger.info(String.format(
-            "[对话] %s → [%s] : %s",
+            "[对话][%s] %s → [%s] : %s",
+            interactionEvent.traceId(),
             player.getName(),
             session.npcBrainId(),
             sanitized.value()
@@ -263,17 +291,7 @@ public class ChatCollector implements Listener {
             player.sendMessage("§7[你] §f" + sanitized.value());
         }
 
-        // 标记为处理中，防止重复提交
-        markProcessing(playerId);
-
-        // 提交到管线（仍在异步线程，后续处理层保持异步）
-        pipeline.submit(new InteractionEvent(
-            player,
-            session.npcEntity(),
-            session.npcBrainId(),
-            sanitized.value(),
-            System.currentTimeMillis()
-        ));
+        pipeline.submit(interactionEvent);
     }
 
     /**

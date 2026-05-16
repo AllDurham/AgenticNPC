@@ -99,6 +99,13 @@ profile:
 emotion:
   enabled: true
 
+# ---- Prompt 变体（实验功能）----
+prompt:
+  variant: "current"
+  # 不同 variant 可能影响 AI 行为与 JSON 输出稳定性。
+  # 可选值：current（原始 prompt）、slim-v1（精简版，节省 15-30% 固定 token）
+  # 切换后请观察 fallback rate 与 action success rate。
+
 # ---- 服务器标识（BungeeCord 多实例下区分子服）----
 server-id: "survival-1"
 
@@ -116,6 +123,13 @@ audit:
 # ---- XP 配置 ----
 xp:
   max-per-action: 1000
+
+# ---- Web 控制台 ----
+web-console:
+  enabled: false
+  host: "127.0.0.1"
+  port: 8080
+  auth-token: "change-me"
 
 # ---- 语义注入防御 ----
 semantic-guard:

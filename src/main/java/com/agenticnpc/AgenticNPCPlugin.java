@@ -4,6 +4,10 @@ import com.agenticnpc.audit.AuditLogger;
 import com.agenticnpc.audit.TokenTracker;
 import com.agenticnpc.command.*;
 import com.agenticnpc.config.ConfigManager;
+import com.agenticnpc.console.MetricsCollector;
+import com.agenticnpc.console.PromptSnapshotStore;
+import com.agenticnpc.console.RecentInteractionStore;
+import com.agenticnpc.console.WebConsole;
 import com.agenticnpc.context.PromptBuilder;
 import com.agenticnpc.dispatch.*;
 import com.agenticnpc.gateway.SemanticGuard;
@@ -62,6 +66,9 @@ public class AgenticNPCPlugin extends JavaPlugin {
     // S5-P1: SemanticGuard + Health
     private SemanticGuard semanticGuard;
     private HealthCommand healthCommand;
+
+    // B-2: Web Console
+    private WebConsole webConsole;
 
     @Override
     public void onEnable() {
@@ -188,10 +195,28 @@ public class AgenticNPCPlugin extends JavaPlugin {
         }
         asyncDispatcher.setHealthCommand(healthCommand);
 
+        // B-2: Web Console 组件
+        MetricsCollector       metricsCollector   = new MetricsCollector();
+        RecentInteractionStore interactionStore   = new RecentInteractionStore(20);
+        PromptSnapshotStore    promptStore        = new PromptSnapshotStore(100);
+        asyncDispatcher.setMetricsCollector(metricsCollector);
+        asyncDispatcher.setInteractionStore(interactionStore);
+        asyncDispatcher.setPromptStore(promptStore);
+
+        webConsole = new WebConsole(
+            configManager, metricsCollector, interactionStore, promptStore,
+            chatCollector, circuitBreaker, rateLimiter,
+            tokenTracker, healthCommand, memoryRepository,
+            getLogger()
+        );
+        webConsole.start();
+
         // 注册命令
         StatsCommand statsCommand = new StatsCommand(tokenTracker);
+        StressCommand stressCommand = new StressCommand(asyncDispatcher, metricsCollector, this, getLogger());
         BindCommand  bindCmd      = new BindCommand(brainStorage, configManager);
         bindCmd.setStatsCommand(statsCommand);
+        bindCmd.setStressCommand(stressCommand);
         EmotionCommand emotionCmd = new EmotionCommand(configManager, emotionManager, auditLogger);
         bindCmd.setEmotionCommand(emotionCmd);
         bindCmd.setHealthCommand(healthCommand);
@@ -204,16 +229,18 @@ public class AgenticNPCPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(chatCollector, this);
 
         getLogger().info("========================================");
-        getLogger().info("  AgenticNPC 启动完成！（Sprint 5）");
+        getLogger().info("  AgenticNPC 启动完成！（Milestone B-2）");
         getLogger().info("  LLM 端点: " + configManager.getLLMEndpoint());
         getLogger().info("  模型:     " + configManager.getLLMModel());
         getLogger().info("  限流后端: " + configManager.getRateLimitBackend());
         getLogger().info("  服务器ID: " + configManager.getServerId());
+        getLogger().info("  Web控制台: " + (webConsole.isRunning() ? "已启动" : "未启用"));
         getLogger().info("========================================");
     }
 
     @Override
     public void onDisable() {
+        if (webConsole   != null) webConsole.stop();
         if (rateLimiter  != null) rateLimiter.shutdown();
         if (auditLogger  != null) auditLogger.shutdown();
         if (tokenTracker != null) tokenTracker.shutdown();

@@ -14,8 +14,27 @@ import java.util.logging.Logger;
  * 1. 标准 JSON（正常路径）
  * 2. Markdown 代码块包裹的 JSON（```json ... ```）
  * 3. 完全非 JSON（降级返回 empty）
+ *
+ * 线程安全：无共享可变状态。FallbackType 通过 ParseResult 返回值传递。
  */
 public class LLMResponseParser {
+
+    /** 解析 fallback 原因分类 */
+    public enum FallbackType {
+        NONE,                // 正常 JSON 解析
+        MARKDOWN_STRIP,      // 剥离了 Markdown 代码块
+        BRACKET_EXTRACTION,  // 从混合文本中提取了 JSON 对象
+        PLAINTEXT_FALLBACK,  // 纯文本兜底
+        EMPTY_RESPONSE,      // 空白响应
+        INVALID_JSON         // JSON 语法错误
+    }
+
+    /** parse() 返回值：包含解析结果和 fallback 类型 */
+    public record ParseResult(Optional<LLMResponse> response, FallbackType fallbackType) {
+        public boolean isPresent()  { return response.isPresent(); }
+        public LLMResponse get()    { return response.get(); }
+        public boolean isFallback() { return fallbackType != FallbackType.NONE; }
+    }
 
     private final Gson   gson = new Gson();
     private final Logger logger;
@@ -26,11 +45,10 @@ public class LLMResponseParser {
 
     /**
      * 解析 LLM 返回的原始内容字符串。
-     *
-     * @param rawContent LLM content 字段的原始字符串
-     * @return 解析成功返回 Optional<LLMResponse>，失败返回 empty
+     * 返回 ParseResult，包含解析结果和 fallback 类型。
+     * 无共享可变状态，完全线程安全。
      */
-    public Optional<LLMResponse> parse(String rawContent) {
+    public ParseResult parse(String rawContent) {
         if (rawContent == null || rawContent.isBlank()) {
             if (rawContent == null) {
                 logger.warning("[解析][LLMResponseParser] LLM 返回 null");
@@ -43,8 +61,12 @@ public class LLMResponseParser {
                         .collect(java.util.stream.Collectors.joining(" "))
                 ));
             }
-            return Optional.empty();
+            return new ParseResult(Optional.empty(), FallbackType.EMPTY_RESPONSE);
         }
+
+        boolean hadMarkdown = !rawContent.equals(rawContent
+            .replaceAll("(?s)```json\\s*", "")
+            .replaceAll("(?s)```\\s*",     ""));
 
         try {
             // Step 1: 剥离 Markdown 代码块标志
@@ -58,7 +80,17 @@ public class LLMResponseParser {
             if (jsonStr == null) {
                 // 没有找到 JSON 对象，走纯文本兜底
                 logger.info("[解析][LLMResponseParser] 未找到 JSON 对象，尝试纯文本兜底");
-                return plaintextFallback(rawContent);
+                return plaintextFallback(rawContent, FallbackType.PLAINTEXT_FALLBACK);
+            }
+
+            // 判断 fallback 类型
+            FallbackType fallbackType;
+            if (!cleaned.equals(jsonStr)) {
+                fallbackType = FallbackType.BRACKET_EXTRACTION;
+            } else if (hadMarkdown) {
+                fallbackType = FallbackType.MARKDOWN_STRIP;
+            } else {
+                fallbackType = FallbackType.NONE;
             }
 
             LLMResponse response = gson.fromJson(jsonStr, LLMResponse.class);
@@ -66,22 +98,22 @@ public class LLMResponseParser {
             // 必填字段校验
             if (response == null) {
                 logger.warning("[解析][LLMResponseParser] Gson 返回 null | 原始内容: " + rawContent);
-                return Optional.empty();
+                return new ParseResult(Optional.empty(), FallbackType.INVALID_JSON);
             }
 
             if (response.dialogue() == null || response.dialogue().isBlank()) {
                 logger.warning("[解析][LLMResponseParser] 缺少 dialogue 字段 | 原始内容: " + rawContent);
-                return Optional.empty();
+                return new ParseResult(Optional.empty(), FallbackType.INVALID_JSON);
             }
 
-            return Optional.of(response);
+            return new ParseResult(Optional.of(response), fallbackType);
 
         } catch (JsonSyntaxException e) {
             logger.warning(String.format(
                 "[解析][LLMResponseParser] JSON 解析失败 | 原始内容: %s | 错误: %s",
                 rawContent, e.getMessage()
             ));
-            return plaintextFallback(rawContent);
+            return plaintextFallback(rawContent, FallbackType.INVALID_JSON);
         }
     }
 
@@ -89,17 +121,6 @@ public class LLMResponseParser {
     // JSON 提取
     // ================================================================
 
-    /**
-     * 从文本中提取第一个完整的 JSON 对象。
-     * 处理场景：
-     *   "（微笑）\n{...}"          → 提取 "{...}"
-     *   "前缀文本 {...} 后缀文本" → 提取 "{...}"
-     *   "{...}"                    → 原样返回
-     *
-     * 使用括号配对算法，不依赖 regex（不硬编码字段名）。
-     *
-     * @return 提取到的 JSON 字符串，未找到则返回 null
-     */
     String extractFirstJsonObject(String text) {
         if (text == null) return null;
 
@@ -140,21 +161,20 @@ public class LLMResponseParser {
             }
         }
 
-        // 括号未闭合，返回从 { 到末尾（让 Gson 报错）
         return null;
     }
 
-    /**
-     * 纯文本兜底：模型忘记输出 JSON，直接输出了角色对话。
-     */
-    private Optional<LLMResponse> plaintextFallback(String rawContent) {
+    private ParseResult plaintextFallback(String rawContent, FallbackType type) {
         String trimmed = rawContent.trim();
         if (!trimmed.startsWith("{")) {
             logger.info("[解析][LLMResponseParser] 触发纯文本兜底，已自动包装为普通对话");
             String safeText = trimmed.length() > 200
                 ? trimmed.substring(0, 197) + "..." : trimmed;
-            return Optional.of(new LLMResponse(safeText, "NONE", null, null));
+            return new ParseResult(
+                Optional.of(new LLMResponse(safeText, "NONE", null, null)),
+                type
+            );
         }
-        return Optional.empty();
+        return new ParseResult(Optional.empty(), type);
     }
 }

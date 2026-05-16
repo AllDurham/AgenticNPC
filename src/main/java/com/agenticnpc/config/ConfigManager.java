@@ -216,6 +216,9 @@ public class ConfigManager {
     // ---- 画像配置 ----
     public int getProfileMaxTokens()                { return config.getInt("profile.max-tokens", 512); }
 
+    // ---- Prompt Variant 配置 ----
+    public String  getPromptVariant()               { return config.getString("prompt.variant", "current"); }
+
     // ---- 情绪配置 ----
     public boolean isEmotionEnabled()               { return config.getBoolean("emotion.enabled", true); }
 
@@ -232,6 +235,12 @@ public class ConfigManager {
     public String  getSemanticGuardApiKey()         { return config.getString("semantic-guard.api-key", ""); }
     public int     getSemanticGuardTimeoutMs()      { return config.getInt("semantic-guard.timeout-ms", 2000); }
     public String  getSemanticGuardMode()           { return config.getString("semantic-guard.mode", "detect"); }
+
+    // ---- Web Console 配置 ----
+    public boolean isWebConsoleEnabled()    { return config.getBoolean("web-console.enabled", false); }
+    public String  getWebConsoleHost()      { return config.getString("web-console.host", "127.0.0.1"); }
+    public int     getWebConsolePort()      { return config.getInt("web-console.port", 8080); }
+    public String  getWebConsoleAuthToken() { return config.getString("web-console.auth-token", "change-me"); }
 
     // ---- Brain 配置 ----
     public Optional<BrainConfig> getBrainConfig(String brainId) {

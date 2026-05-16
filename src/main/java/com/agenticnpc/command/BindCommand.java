@@ -32,6 +32,7 @@ public class BindCommand implements CommandExecutor, TabCompleter {
     private StatsCommand             statsCommand;
     private EmotionCommand           emotionCommand;
     private HealthCommand            healthCommand;
+    private StressCommand            stressCommand;
 
     public BindCommand(EntityBrainStorage brainStorage, ConfigManager config) {
         this.brainStorage = brainStorage;
@@ -48,6 +49,10 @@ public class BindCommand implements CommandExecutor, TabCompleter {
 
     public void setHealthCommand(HealthCommand healthCommand) {
         this.healthCommand = healthCommand;
+    }
+
+    public void setStressCommand(StressCommand stressCommand) {
+        this.stressCommand = stressCommand;
     }
 
     @Override
@@ -76,6 +81,7 @@ public class BindCommand implements CommandExecutor, TabCompleter {
             case "stats"   -> { if (statsCommand != null) statsCommand.handle(player, args); yield true; }
             case "emotion" -> { if (emotionCommand != null) emotionCommand.handle(player, args); yield true; }
             case "health"  -> { if (healthCommand != null) healthCommand.handle(player, args); yield true; }
+            case "stress"  -> { if (stressCommand != null) stressCommand.handle(player, args); yield true; }
             default        -> { sendHelp(player); yield true; }
         };
     }
@@ -168,7 +174,7 @@ public class BindCommand implements CommandExecutor, TabCompleter {
     public List<String> onTabComplete(CommandSender sender, Command command,
                                        String alias, String[] args) {
         if (args.length == 1) {
-            return List.of("bind", "unbind", "status", "reload", "stats", "emotion", "profile", "health").stream()
+            return List.of("bind", "unbind", "status", "reload", "stats", "emotion", "profile", "health", "stress").stream()
                 .filter(s -> s.startsWith(args[0].toLowerCase()))
                 .collect(Collectors.toList());
         }

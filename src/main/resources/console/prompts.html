@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgenticNPC - Prompt Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, monospace; background: #0f1117; color: #e0e0e0; }
+  .header { background: #1a1d27; padding: 16px 24px; border-bottom: 1px solid #2d3148; display: flex; justify-content: space-between; align-items: center; }
+  .header h1 { font-size: 18px; color: #7c8aff; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .nav { display: flex; gap: 16px; }
+  .nav a { color: #7c8aff; text-decoration: none; font-size: 13px; }
+  .nav a:hover { text-decoration: underline; }
+  .nav a.active { color: #fff; font-weight: bold; }
+  .list-item { background: #1a1d27; border: 1px solid #2d3148; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.2s; }
+  .list-item:hover { border-color: #7c8aff; }
+  .list-item .meta { display: flex; gap: 16px; font-size: 12px; color: #888; margin-bottom: 4px; }
+  .list-item .input { font-size: 14px; color: #ccc; }
+  .list-item .action { font-size: 12px; color: #4caf50; margin-top: 4px; }
+  .detail { background: #1a1d27; border: 1px solid #2d3148; border-radius: 8px; padding: 20px; margin-bottom: 16px; display: none; }
+  .detail.show { display: block; }
+  .detail h3 { color: #7c8aff; margin-bottom: 12px; font-size: 14px; }
+  .detail pre { background: #0f1117; border: 1px solid #2d3148; border-radius: 4px; padding: 12px; font-size: 12px; color: #b0b0b0; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; margin-bottom: 16px; }
+  .detail .field { margin-bottom: 12px; }
+  .detail .field label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px; }
+  .close-btn { float: right; background: none; border: 1px solid #555; color: #888; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .close-btn:hover { border-color: #f44336; color: #f44336; }
+  .back-link { font-size: 12px; color: #666; }
+  .stats { font-size: 12px; color: #555; text-align: right; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>Prompt Snapshot Viewer</h1>
+    <div class="nav" style="margin-top:6px;">
+      <a href="/console">Dashboard</a>
+      <a href="/console/prompts" class="active">Prompts</a>
+    </div>
+  </div>
+  <div>
+    <span class="back-link">Last 100 snapshots (memory only)</span>
+  </div>
+</div>
+<div class="container">
+  <div class="stats">Total: <span id="count">0</span> snapshots | Auto-refresh: 10s</div>
+  <div id="detail-panel" class="detail"></div>
+  <div id="prompt-list"></div>
+</div>
+
+<script>
+const TOKEN = sessionStorage.getItem('anpc_token');
+function headers() { return TOKEN ? {'Authorization': 'Bearer ' + TOKEN} : {}; }
+
+function fmtTime(ms) {
+  return ms ? new Date(ms).toLocaleString('zh-CN', {hour12:false}) : '-';
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadList() {
+  try {
+    const res = await fetch('/api/prompts?limit=100', {headers: headers()});
+    if (res.status === 401) { location.href = '/console/login'; return; }
+    const data = await res.json();
+    const list = data.snapshots || [];
+    document.getElementById('count').textContent = list.length;
+
+    document.getElementById('prompt-list').innerHTML = list.map((s, i) =>
+      '<div class="list-item" onclick="showDetail(' + i + ')">' +
+      '<div class="meta">' +
+      '<span><code>' + esc(s.traceId || '-') + '</code></span>' +
+      '<span>' + fmtTime(s.timestampMs) + '</span>' +
+      '<span>Player: ' + esc(s.playerName) + '</span>' +
+      '<span>NPC: ' + esc(s.brainName) + '</span>' +
+      '<span>Tokens: ' + (s.totalTokens || 0) + '</span>' +
+      '<span>Variant: ' + esc(s.variant || 'current') + '</span>' +
+      '<span>Fixed: ' + (s.fixedTokenCost || 0) + '</span>' +
+      '</div>' +
+      '<div class="input">Input: ' + esc((s.userInput||'').substring(0,80)) + '</div>' +
+      '<div class="action">Action: ' + esc(s.finalAction || '-') + '</div>' +
+      '</div>'
+    ).join('');
+
+    window._snapshots = list;
+  } catch(e) {
+    console.error('Load failed:', e);
+  }
+}
+
+function showDetail(i) {
+  const s = window._snapshots[i];
+  if (!s) return;
+  const panel = document.getElementById('detail-panel');
+  panel.className = 'detail show';
+  panel.innerHTML =
+    '<button class="close-btn" onclick="this.parentElement.className=\'detail\'">Close</button>' +
+    '<h3>Prompt Snapshot #' + i + ' - ' + esc(s.brainName) + ' / ' + esc(s.playerName) + '</h3>' +
+    '<div class="field"><label>TraceId</label><code>' + esc(s.traceId || '-') + '</code></div>' +
+    '<div class="field"><label>Time</label>' + fmtTime(s.timestampMs) + '</div>' +
+    '<div class="field"><label>User Input</label><pre>' + esc(s.userInput) + '</pre></div>' +
+    '<div class="field"><label>System Prompt</label><pre>' + esc(s.systemPrompt) + '</pre></div>' +
+    '<div class="field"><label>History</label><pre>' + esc(s.history) + '</pre></div>' +
+    '<div class="field"><label>LLM Output</label><pre>' + esc(s.llmOutput) + '</pre></div>' +
+    '<div class="field"><label>Final Action</label>' + esc(s.finalAction || 'NONE') + '</div>' +
+    '<div class="field"><label>Tokens</label>prompt=' + (s.promptTokens||0) + ' completion=' + (s.completionTokens||0) + ' total=' + (s.totalTokens||0) +
+    (s.totalTokens > 4000 ? ' <span style="color:#ff9800;font-weight:bold">超预算</span>' : '') + '</div>' +
+    '<div class="field"><label>Token Breakdown</label>' +
+    'system=' + (s.systemTokens||0) +
+    ' | profile=' + (s.profileTokens||0) +
+    ' | summary=' + (s.summaryTokens||0) +
+    ' | emotion=' + (s.emotionTokens||0) +
+    ' | player=' + (s.playerInfoTokens||0) +
+    ' | actions=' + (s.actionTokens||0) +
+    ' | format=' + (s.formatTokens||0) +
+    ' | history=' + (s.historyTokens||0) +
+    ' | input=' + (s.userInputTokens||0) +
+    '</div>' +
+    '<div class="field"><label>Fallback Type</label>' + esc(s.fallbackType || 'NONE') + '</div>' +
+    '<div class="field"><label>Variant</label>' + esc(s.variant || 'current') + '</div>' +
+    '<div class="field"><label>Fixed Token Cost</label>' + (s.fixedTokenCost || 0) +
+      (s.totalTokens > 0 && (s.fixedTokenCost || 0) / s.totalTokens > 0.7
+        ? ' <span style="color:#ff9800;font-weight:bold">(' +
+          Math.round((s.fixedTokenCost || 0) / s.totalTokens * 100) + '% of total)</span>'
+        : '') +
+    '</div>';
+  panel.scrollIntoView({behavior: 'smooth'});
+}
+
+loadList();
+setInterval(loadList, 10000);
+</script>
+</body>
+</html>

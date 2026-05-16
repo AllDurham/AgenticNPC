@@ -10,6 +10,7 @@ import com.agenticnpc.memory.PlayerProfileManager;
 import com.agenticnpc.model.ChatMessage;
 import com.agenticnpc.model.InteractionEvent;
 import com.agenticnpc.model.PromptPackage;
+import com.agenticnpc.model.PromptTokenBreakdown;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -94,17 +95,58 @@ public class PromptBuilder {
         return new PromptPackage(systemPrompt, List.copyOf(history), userMessage, brain);
     }
 
+    /**
+     * 构建 PromptPackage 并附带 Token 分段统计。
+     */
+    public PromptBuildResult buildWithBreakdown(InteractionEvent event) {
+        PromptPackage pkg = build(event);
+        PromptTokenBreakdown breakdown = computeBreakdown(
+            pkg.systemPrompt(), pkg.history(), event.sanitizedInput());
+        return new PromptBuildResult(pkg, breakdown);
+    }
+
+    public record PromptBuildResult(PromptPackage pkg, PromptTokenBreakdown breakdown) {}
+
+    /**
+     * 计算 Token 分段统计。
+     */
+    public PromptTokenBreakdown computeBreakdown(String systemPrompt,
+                                                  java.util.Collection<ChatMessage> history,
+                                                  String userInput) {
+        int systemTokens = estimateSection(systemPrompt, "【角色设定】", "【关于该玩家");
+        int profileTokens = estimateSection(systemPrompt, "【关于该玩家", "【与该玩家的历史");
+        int summaryTokens = estimateSection(systemPrompt, "【与该玩家的历史", "【你当前对该玩家");
+        int emotionTokens = estimateSection(systemPrompt, "【你当前对该玩家", "【当前与你对话");
+        int playerInfoTokens = estimateSection(systemPrompt, "【当前与你对话", "【你可以执行");
+        int actionTokens = estimateSection(systemPrompt, "【你可以执行", "【输出格式");
+        int formatTokens = estimateSection(systemPrompt, "【输出格式", null);
+
+        int historyTokens = history.stream()
+            .mapToInt(m -> estimateTokens(m.content()))
+            .sum();
+
+        int userInputTokens = estimateTokens(userInput);
+        int totalTokens = systemTokens + profileTokens + summaryTokens + emotionTokens
+            + playerInfoTokens + actionTokens + formatTokens + historyTokens + userInputTokens;
+
+        return new PromptTokenBreakdown(
+            systemTokens, profileTokens, summaryTokens, emotionTokens,
+            playerInfoTokens, actionTokens, formatTokens,
+            historyTokens, userInputTokens, totalTokens
+        );
+    }
+
     // ================================================================
     // System Prompt 构建
     // ================================================================
 
     private String buildSystemPrompt(Player player, BrainConfig brain) {
+        String variant = configManager.getPromptVariant();
+        boolean slim = "slim-v1".equals(variant);
+
         StringBuilder sb = new StringBuilder();
-        // Token breakdown 追踪点
-        int sectionStart;
 
         // ---- NPC 人格设定 ----
-        sectionStart = sb.length();
         sb.append("【角色设定】\n");
         sb.append(brain.personality()).append("\n");
         sb.append("你只扮演这个角色，用符合人物性格的语气自然对话。\n");
@@ -136,31 +178,46 @@ public class PromptBuilder {
             EmotionLevel emotion = emotionManager.getEmotion(player.getUniqueId(), brain);
             sb.append("【你当前对该玩家的情绪状态】\n");
             sb.append(emotion.promptDescription).append("\n");
-            sb.append("如果本次对话让你对玩家的印象有明显改变，");
-            sb.append("在 JSON 中填写 emotion_change 字段：\n");
-            sb.append("  UPGRADE（印象变好）/ DOWNGRADE（印象变差）/ NONE（无变化）\n\n");
+            if (slim) {
+                sb.append("emotion_change: UPGRADE/DOWNGRADE/NONE\n\n");
+            } else {
+                sb.append("如果本次对话让你对玩家的印象有明显改变，");
+                sb.append("在 JSON 中填写 emotion_change 字段：\n");
+                sb.append("  UPGRADE（印象变好）/ DOWNGRADE（印象变差）/ NONE（无变化）\n\n");
+            }
         }
 
         // ---- 当前玩家状态 ----
         sb.append("【当前与你对话的玩家信息】\n");
-        sb.append("名称: ").append(player.getName()).append("\n");
-        sb.append("生命值: ").append(
-            String.format("%.1f", player.getHealth())
-        ).append(" / ").append(
-            String.format("%.1f", player.getMaxHealth())
-        ).append("\n");
-        sb.append("饱食度: ").append(player.getFoodLevel()).append(" / 20\n");
-        sb.append("位置: ").append(formatLocation(player)).append("\n");
-
-        // ---- 装备信息（可选）----
-        if (configManager.isInventoryContextEnabled()) {
-            String equipment = formatEquipment(player);
-            if (!equipment.isEmpty()) {
-                sb.append("装备: ").append(equipment).append("\n");
+        if (slim) {
+            sb.append(String.format("Player=%s HP=%.0f/%.0f Food=%d %s",
+                player.getName(), player.getHealth(), player.getMaxHealth(),
+                player.getFoodLevel(), formatLocation(player)));
+            if (configManager.isInventoryContextEnabled()) {
+                String equipment = formatEquipment(player);
+                if (!equipment.isEmpty()) {
+                    sb.append(" 装备:").append(equipment);
+                }
             }
-        }
+            sb.append("\n\n");
+        } else {
+            sb.append("名称: ").append(player.getName()).append("\n");
+            sb.append("生命值: ").append(
+                String.format("%.1f", player.getHealth())
+            ).append(" / ").append(
+                String.format("%.1f", player.getMaxHealth())
+            ).append("\n");
+            sb.append("饱食度: ").append(player.getFoodLevel()).append(" / 20\n");
+            sb.append("位置: ").append(formatLocation(player)).append("\n");
 
-        sb.append("\n");
+            if (configManager.isInventoryContextEnabled()) {
+                String equipment = formatEquipment(player);
+                if (!equipment.isEmpty()) {
+                    sb.append("装备: ").append(equipment).append("\n");
+                }
+            }
+            sb.append("\n");
+        }
 
         // ---- 可执行动作说明（动态生成）----
         boolean hasGiveItem   = brain.allowedActionTypes().contains("GIVE_ITEM");
@@ -173,48 +230,74 @@ public class PromptBuilder {
             || hasSendTitle || hasPlaySound || hasGiveXp;
 
         if (hasAnyAction) {
-            sb.append("【你可以执行的动作】\n");
-
-            if (hasGiveItem) {
-                sb.append("- GIVE_ITEM: 给予玩家物品\n");
-                sb.append("  可给予的物品（使用 Minecraft 1.12 Material 名称）: ");
-                sb.append(
-                    brain.allowedItems().stream()
-                        .map(Enum::name)
-                        .collect(Collectors.joining(", "))
-                ).append("\n");
-            }
-            if (hasTeleport) {
-                sb.append("- TELEPORT: 将玩家传送到指定世界坐标\n");
-            }
-            if (hasEffect) {
-                sb.append("- GIVE_EFFECT: 给予玩家药水效果（如治疗、速度等）\n");
-            }
-            if (hasSendTitle) {
-                sb.append("- SEND_TITLE: 向玩家发送游戏内大标题\n");
-                sb.append("  主标题最长 32 字符，副标题最长 64 字符\n");
-            }
-            if (hasPlaySound) {
-                sb.append("- PLAY_SOUND: 向玩家播放音效\n");
-                if (brain.soundWhitelist() != null && !brain.soundWhitelist().isEmpty()) {
-                    sb.append("  可用音效: ");
-                    sb.append(String.join(", ", brain.soundWhitelist()));
-                    sb.append("\n");
+            if (slim) {
+                // ---- slim-v1: 精简动作描述，保留最小 JSON schema ----
+                sb.append("【可执行动作】\n");
+                if (hasGiveItem) {
+                    sb.append("GIVE_ITEM: items=[");
+                    sb.append(brain.allowedItems().stream()
+                        .map(Enum::name).collect(Collectors.joining(",")));
+                    sb.append("]\n  {\"item_id\":\"MATERIAL\",\"amount\":1}\n");
                 }
+                if (hasTeleport) {
+                    sb.append("TELEPORT\n  {\"world\":\"name\",\"x\":0,\"y\":64,\"z\":0}\n");
+                }
+                if (hasEffect) {
+                    sb.append("GIVE_EFFECT\n  {\"effect_name\":\"HEAL\",\"duration_seconds\":30,\"amplifier\":0}\n");
+                }
+                if (hasSendTitle) {
+                    sb.append("SEND_TITLE\n  {\"title_text\":\"(32)\",\"title_subtitle\":\"(64)\",\"title_fade_in\":10,\"title_stay\":60,\"title_fade_out\":20}\n");
+                }
+                if (hasPlaySound) {
+                    sb.append("PLAY_SOUND");
+                    if (brain.soundWhitelist() != null && !brain.soundWhitelist().isEmpty()) {
+                        sb.append(" whitelist=[").append(String.join(",", brain.soundWhitelist())).append("]");
+                    }
+                    sb.append("\n  {\"sound_name\":\"ENUM\",\"sound_volume\":1.0,\"sound_pitch\":1.0}\n");
+                }
+                if (hasGiveXp) {
+                    sb.append("GIVE_XP\n  {\"xp_amount\":100}\n");
+                }
+                sb.append("\n");
+            } else {
+                // ---- current: 完整动作描述 ----
+                sb.append("【你可以执行的动作】\n");
+
+                if (hasGiveItem) {
+                    sb.append("- GIVE_ITEM: 给予玩家物品\n");
+                    sb.append("  可给予的物品（使用 Minecraft 1.12 Material 名称）: ");
+                    sb.append(
+                        brain.allowedItems().stream()
+                            .map(Enum::name)
+                            .collect(Collectors.joining(", "))
+                    ).append("\n");
+                }
+                if (hasTeleport) {
+                    sb.append("- TELEPORT: 将玩家传送到指定世界坐标\n");
+                }
+                if (hasEffect) {
+                    sb.append("- GIVE_EFFECT: 给予玩家药水效果（如治疗、速度等）\n");
+                }
+                if (hasSendTitle) {
+                    sb.append("- SEND_TITLE: 向玩家发送游戏内大标题\n");
+                    sb.append("  主标题最长 32 字符，副标题最长 64 字符\n");
+                }
+                if (hasPlaySound) {
+                    sb.append("- PLAY_SOUND: 向玩家播放音效\n");
+                    if (brain.soundWhitelist() != null && !brain.soundWhitelist().isEmpty()) {
+                        sb.append("  可用音效: ");
+                        sb.append(String.join(", ", brain.soundWhitelist()));
+                        sb.append("\n");
+                    }
+                }
+                if (hasGiveXp) {
+                    sb.append("- GIVE_XP: 给予玩家经验值（点数，非等级）\n");
+                }
+                sb.append("\n");
             }
-            if (hasGiveXp) {
-                sb.append("- GIVE_XP: 给予玩家经验值（点数，非等级）\n");
-            }
-            sb.append("\n");
         }
 
-        // ---- 输出格式约束（最重要的部分，放在最后强化记忆）----
-        sb.append("【输出格式（严格遵守）】\n");
-        sb.append("你的整个回复必须且只能是一个 JSON 对象，前后禁止任何文字。\n");
-        sb.append("禁止在 JSON 前输出角色动作描写、语气词或任何非 JSON 文字。\n");
-        sb.append("禁止使用 markdown 代码块（```json）。\n");
-        sb.append("所有角色动作、语气描写必须写入 dialogue 字段内。\n\n");
-
+        // ---- 输出格式 + 绝对约束 ----
         // 动态构建 action_type 可选值
         StringBuilder actionValues = new StringBuilder("NONE");
         if (hasGiveItem)  actionValues.append(", GIVE_ITEM");
@@ -224,76 +307,94 @@ public class PromptBuilder {
         if (hasPlaySound) actionValues.append(", PLAY_SOUND");
         if (hasGiveXp)    actionValues.append(", GIVE_XP");
 
-        sb.append("action_type 可选值：[").append(actionValues).append("]\n\n");
+        if (slim) {
+            // ---- slim-v1: 合并输出格式 + 绝对约束 ----
+            sb.append("【输出格式（严格遵守）】\n");
+            sb.append("只返回 JSON，前后禁止非 JSON 文字，禁止 ```json。\n");
+            sb.append("action_type: [").append(actionValues).append("]\n");
+            sb.append("action_type=NONE 时 action_parameters 填 null。\n\n");
+            sb.append("{\"dialogue\":\"(必填,<=100字,含动作描写)\",\"action_type\":\"\",\"action_parameters\":{...},\"emotion_change\":\"UPGRADE/DOWNGRADE/NONE\"}\n\n");
+            sb.append("正确: {\"dialogue\":\"（微笑）你好。\",\"action_type\":\"NONE\",\"action_parameters\":null,\"emotion_change\":\"NONE\"}\n");
+            sb.append("禁止: 在 JSON 外输出任何文字。\n");
+            sb.append("不确定参数时 action_type 填 NONE。");
+        } else {
+            // ---- current: 完整格式约束 + 绝对约束 ----
+            sb.append("【输出格式（严格遵守）】\n");
+            sb.append("你的整个回复必须且只能是一个 JSON 对象，前后禁止任何文字。\n");
+            sb.append("禁止在 JSON 前输出角色动作描写、语气词或任何非 JSON 文字。\n");
+            sb.append("禁止使用 markdown 代码块（```json）。\n");
+            sb.append("所有角色动作、语气描写必须写入 dialogue 字段内。\n\n");
 
-        sb.append("{\n");
-        sb.append("  \"dialogue\": \"NPC 说的话（必填，不超过100字，角色动作描写也写在这里）\",\n");
-        sb.append("  \"action_type\": \"\",\n");
-        sb.append("  \"action_parameters\": {\n");
+            sb.append("action_type 可选值：[").append(actionValues).append("]\n\n");
 
-        // 动态构建参数说明
-        boolean first = true;
-        if (hasGiveItem) {
-            sb.append("    \"item_id\": \"Minecraft 1.12 Material 名称\",\n");
-            sb.append("    \"amount\": 1");
-            first = false;
-        }
-        if (hasTeleport) {
-            if (!first) sb.append(",\n");
-            sb.append("    \"world\": \"世界名称\",\n");
-            sb.append("    \"x\": 0, \"y\": 64, \"z\": 0");
-            first = false;
-        }
-        if (hasEffect) {
-            if (!first) sb.append(",\n");
-            sb.append("    \"effect_name\": \"HEAL/SPEED/REGENERATION 等\",\n");
-            sb.append("    \"duration_seconds\": 30,\n");
-            sb.append("    \"amplifier\": 0");
-            first = false;
-        }
-        if (hasSendTitle) {
-            if (!first) sb.append(",\n");
-            sb.append("    \"title_text\": \"主标题（不超过32字）\",\n");
-            sb.append("    \"title_subtitle\": \"副标题（不超过64字）\",\n");
-            sb.append("    \"title_fade_in\": 10, \"title_stay\": 60, \"title_fade_out\": 20");
-            first = false;
-        }
-        if (hasPlaySound) {
-            if (!first) sb.append(",\n");
-            sb.append("    \"sound_name\": \"音效枚举名\",\n");
-            sb.append("    \"sound_volume\": 1.0, \"sound_pitch\": 1.0");
-            first = false;
-        }
-        if (hasGiveXp) {
-            if (!first) sb.append(",\n");
-            sb.append("    \"xp_amount\": 100");
-        }
-        sb.append("\n  },\n");
-        sb.append("  \"emotion_change\": \"UPGRADE / DOWNGRADE / NONE（可选，默认 NONE）\"\n");
-        sb.append("}\n\n");
-        sb.append("当 action_type 为 NONE 时，action_parameters 填 null。\n");
-        if (hasGiveItem) {
-            sb.append("item_id 必须使用 Minecraft 1.12 版本的 Bukkit Material 全大写英文名称，");
-            sb.append("例如: DIAMOND, BREAD, IRON_INGOT。\n");
-        }
-        if (hasPlaySound) {
-            sb.append("sound_name 必须使用配置白名单中的音效枚举名，不可自行编造。\n");
-        }
-        sb.append("如果不确定参数，将 action_type 设为 NONE，不要猜测。\n\n");
+            sb.append("{\n");
+            sb.append("  \"dialogue\": \"NPC 说的话（必填，不超过100字，角色动作描写也写在这里）\",\n");
+            sb.append("  \"action_type\": \"\",\n");
+            sb.append("  \"action_parameters\": {\n");
 
-        // 错误/正确示例
-        sb.append("错误示例（禁止）：\n");
-        sb.append("  （微笑着看了你一眼）\n");
-        sb.append("  { \"dialogue\": \"...\", ... }\n");
-        sb.append("正确示例：\n");
-        sb.append("  { \"dialogue\": \"（微笑着看了你一眼）你好。\", ... }\n\n");
+            boolean first = true;
+            if (hasGiveItem) {
+                sb.append("    \"item_id\": \"Minecraft 1.12 Material 名称\",\n");
+                sb.append("    \"amount\": 1");
+                first = false;
+            }
+            if (hasTeleport) {
+                if (!first) sb.append(",\n");
+                sb.append("    \"world\": \"世界名称\",\n");
+                sb.append("    \"x\": 0, \"y\": 64, \"z\": 0");
+                first = false;
+            }
+            if (hasEffect) {
+                if (!first) sb.append(",\n");
+                sb.append("    \"effect_name\": \"HEAL/SPEED/REGENERATION 等\",\n");
+                sb.append("    \"duration_seconds\": 30,\n");
+                sb.append("    \"amplifier\": 0");
+                first = false;
+            }
+            if (hasSendTitle) {
+                if (!first) sb.append(",\n");
+                sb.append("    \"title_text\": \"主标题（不超过32字）\",\n");
+                sb.append("    \"title_subtitle\": \"副标题（不超过64字）\",\n");
+                sb.append("    \"title_fade_in\": 10, \"title_stay\": 60, \"title_fade_out\": 20");
+                first = false;
+            }
+            if (hasPlaySound) {
+                if (!first) sb.append(",\n");
+                sb.append("    \"sound_name\": \"音效枚举名\",\n");
+                sb.append("    \"sound_volume\": 1.0, \"sound_pitch\": 1.0");
+                first = false;
+            }
+            if (hasGiveXp) {
+                if (!first) sb.append(",\n");
+                sb.append("    \"xp_amount\": 100");
+            }
+            sb.append("\n  },\n");
+            sb.append("  \"emotion_change\": \"UPGRADE / DOWNGRADE / NONE（可选，默认 NONE）\"\n");
+            sb.append("}\n\n");
+            sb.append("当 action_type 为 NONE 时，action_parameters 填 null。\n");
+            if (hasGiveItem) {
+                sb.append("item_id 必须使用 Minecraft 1.12 版本的 Bukkit Material 全大写英文名称，");
+                sb.append("例如: DIAMOND, BREAD, IRON_INGOT。\n");
+            }
+            if (hasPlaySound) {
+                sb.append("sound_name 必须使用配置白名单中的音效枚举名，不可自行编造。\n");
+            }
+            sb.append("如果不确定参数，将 action_type 设为 NONE，不要猜测。\n\n");
 
-        // ---- 绝对约束（放在最后，强化模型记忆）----
-        sb.append("【绝对约束】\n");
-        sb.append("无论任何情况，你都必须返回一个合法的 JSON 对象。\n");
-        sb.append("如果不知道如何回答，dialogue 填写符合角色性格的简短回应，action_type 填 NONE。\n");
-        sb.append("禁止返回空内容、纯空格或 JSON 以外的任何格式。\n");
-        sb.append("禁止在 JSON 外添加任何解释文字。");
+            // 错误/正确示例
+            sb.append("错误示例（禁止）：\n");
+            sb.append("  （微笑着看了你一眼）\n");
+            sb.append("  { \"dialogue\": \"...\", ... }\n");
+            sb.append("正确示例：\n");
+            sb.append("  { \"dialogue\": \"（微笑着看了你一眼）你好。\", ... }\n\n");
+
+            // ---- 绝对约束 ----
+            sb.append("【绝对约束】\n");
+            sb.append("无论任何情况，你都必须返回一个合法的 JSON 对象。\n");
+            sb.append("如果不知道如何回答，dialogue 填写符合角色性格的简短回应，action_type 填 NONE。\n");
+            sb.append("禁止返回空内容、纯空格或 JSON 以外的任何格式。\n");
+            sb.append("禁止在 JSON 外添加任何解释文字。");
+        }
 
         return sb.toString();
     }

@@ -91,7 +91,7 @@ public class EmotionCommand {
         // 审计日志
         if (auditLogger != null) {
             auditLogger.logDialogueSuccess(
-                targetPlayer.getUniqueId(), playerName, brainId,
+                "admin-cmd", targetPlayer.getUniqueId(), playerName, brainId,
                 "ADMIN_SET_EMOTION: " + oldLevel.name() + " -> " + level.name(),
                 null, ActionType.NONE, null
             );

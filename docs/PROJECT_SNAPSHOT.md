@@ -1,11 +1,11 @@
 # AgenticNPC 项目快照
 
-> 生成时间：2026-05-10 | 分支：master | 最新 tag：v1.3-alpha
-> 源文件：56 个 | 测试文件：6 个 | 测试用例：93 个 | JAR：23MB
+> 生成时间：2026-05-11 | 分支：master | 最新 tag：v1.3-alpha
+> 源文件：61 个 | 测试文件：9 个 | 测试用例：133 个 | JAR：29MB
 
 ---
 
-## 1. Java 文件清单（56 个）
+## 1. Java 文件清单（61 个）
 
 ### 主类
 
@@ -41,7 +41,7 @@
 
 | 包路径 | 类名 | 职责 |
 |--------|------|------|
-| `com.agenticnpc.hook` | `ChatCollector` | 玩家对话状态机（LISTENING ↔ PROCESSING），拦截聊天事件 |
+| `com.agenticnpc.hook` | `ChatCollector` | 玩家对话状态机（LISTENING ↔ PROCESSING），拦截聊天事件，暴露会话统计 |
 | `com.agenticnpc.hook` | `VanillaHook` | 原版实体交互 Hook，监听 PlayerInteractEntityEvent |
 | `com.agenticnpc.hook` | `CitizensHook` | Citizens NPC 交互 Hook，监听 NPCRightClickEvent |
 | `com.agenticnpc.hook` | `MythicMobsHook` | MythicMobs 交互 Hook，监听 MythicMobInteractEvent |
@@ -51,7 +51,7 @@
 
 | 包路径 | 类名 | 职责 |
 |--------|------|------|
-| `com.agenticnpc.dispatch` | `AsyncDispatcher` | 核心异步调度器，串联限流→语义审核→Prompt→LLM→解析→校验→执行全链路 |
+| `com.agenticnpc.dispatch` | `AsyncDispatcher` | 核心异步调度器，串联限流→语义审核→Prompt→LLM→解析→校验→执行全链路，接入 Metrics/Snapshot 采集 |
 | `com.agenticnpc.dispatch` | `LLMClient` | LLM HTTP 客户端，使用 Java 17 内置 HttpClient |
 | `com.agenticnpc.dispatch` | `CircuitBreaker` | 熔断器（CLOSED→OPEN→HALF_OPEN 状态机） |
 | `com.agenticnpc.dispatch` | `RateLimiter` | 限流器接口（tryAcquire + shutdown） |
@@ -67,7 +67,7 @@
 | `com.agenticnpc.gateway` | `SemanticGuard` | 语义注入防御：LLM 二次审核（SAFE/SUSPICIOUS/BLOCKED），fail-open |
 | `com.agenticnpc.gateway` | `ActionValidator` | 动作校验器：白名单 + 参数完整性 + sound-whitelist + XP 有效性 |
 | `com.agenticnpc.gateway` | `ItemSafetyGuard` | 物品安全守卫：Material 解析 + 白名单 + 数量截断 + 跨版本别名映射 |
-| `com.agenticnpc.gateway` | `LLMResponseParser` | LLM 响应容错解析器：JSON 解析 + Markdown 剥离 + 纯文本兜底 |
+| `com.agenticnpc.gateway` | `LLMResponseParser` | LLM 响应容错解析器：JSON 解析 + Markdown 剥离 + 括号配对提取 + 纯文本兜底 + fallback 追踪 |
 | `com.agenticnpc.gateway.model` | `SanitizeResult` | 输入清洗结果（accepted/value/rejectReason） |
 | `com.agenticnpc.gateway.model` | `ValidationResult` | 动作校验结果（valid/actionType/parameters/failReason） |
 | `com.agenticnpc.gateway.model` | `ItemSafetyResult` | 物品安全检查结果（safe/material/amount/reason） |
@@ -119,6 +119,15 @@
 | `com.agenticnpc.audit` | `MySQLAuditRepository` | MySQL 审计双写实现 |
 | `com.agenticnpc.audit` | `TokenTracker` | Token 用量异步统计 + 告警，支持全局/玩家/Brain 三维度查询 |
 
+### console — Web 运维控制台
+
+| 包路径 | 类名 | 职责 |
+|--------|------|------|
+| `com.agenticnpc.console` | `WebConsole` | Javalin 5.6.3 Web 服务器 + Bearer Token 认证 + Dashboard/API 路由 |
+| `com.agenticnpc.console` | `MetricsCollector` | 统一指标采集器（LongAdder + 滑动窗口，零线程开销） |
+| `com.agenticnpc.console` | `RecentInteractionStore` | 最近 20 条对话环形缓冲（固定容量，线程安全） |
+| `com.agenticnpc.console` | `PromptSnapshotStore` | 最近 100 条 Prompt 快照环形缓冲（仅内存，不落盘） |
+
 ### storage — 实体绑定存储
 
 | 包路径 | 类名 | 职责 |
@@ -140,7 +149,7 @@
 
 ---
 
-## 2. 测试文件清单（6 个，93 个测试用例）
+## 2. 测试文件清单（9 个，133 个测试用例）
 
 | 测试类 | 用例数 | 覆盖范围 |
 |--------|--------|----------|
@@ -150,6 +159,10 @@
 | `PromptRegressionTest` | 14 | JSON fixture 驱动回归：所有 ActionType + 边界 + Markdown + emotion |
 | `SemanticGuardTest` | 16 | SAFE/SUSPICIOUS/BLOCKED 判定、额外文字容忍、fail-open（5 种异常场景） |
 | `HealthCommandTest` | 3 | 错误计数器、SemanticGuard 标记 |
+| `PromptTokenBreakdownTest` | 6 | Token 估算算法（中文/英文/混合/空文本） |
+| `MetricsCollectorTest` | 10 | 指标累加、ActionType 分类、滑动窗口、快照隔离 |
+| `RecentInteractionStoreTest` | 6 | 环形缓冲容量、覆盖、线程安全 |
+| `PromptSnapshotStoreTest` | 7 | 环形缓冲容量、getById、字段完整性 |
 
 ---
 
@@ -183,13 +196,27 @@ Citizens/MythicMobs Hook、TELEPORT/GIVE_EFFECT 动作、WorldGuard 集成、药
 
 | 任务 | 说明 |
 |------|------|
-| P0-1 | 单元测试体系（JUnit 5 + Mockito，74 tests） |
+| P0-1 | 单元测试体系（JUnit 5 + Mockito，93 tests） |
 | P0-2 | Prompt Regression 测试（14 条 JSON fixture） |
 | P0-3 | GitHub Actions CI Pipeline |
 | P0-4 | Structured Audit Event（JSONL 格式） |
 | P1-A | Redis 跨服限流（双模式：local/redis，Lua 原子固定窗口，fail-open） |
 | P1-B | SemanticGuard 语义注入防御（独立 LLM 审核，SAFE/SUSPICIOUS/BLOCKED） |
 | P1-C | /anpc health 命令（7 项运行指标） |
+
+### Milestone B-2：Web 运维控制台 ✅
+
+| 任务 | 说明 |
+|------|------|
+| B2-1 | MetricsCollector 统一指标采集（LongAdder + 60s 滑动窗口，零线程开销） |
+| B2-2 | RecentInteractionStore 最近对话环形缓冲（20 条，线程安全） |
+| B2-3 | PromptSnapshotStore Prompt 快照存储（100 条，仅内存，不落盘） |
+| B2-4 | WebConsole Javalin 5.6.3 服务器（Bearer Token 认证，默认 localhost:8080） |
+| B2-5 | Dashboard 页面（暗色主题，6 项系统状态 + 4 项 Token 指标 + 4 项错误指标 + 20 条最近对话） |
+| B2-6 | Prompt Snapshot Viewer 页面（查看最近 AI 决策过程） |
+| B2-7 | Metrics API（/api/dashboard, /api/metrics, /api/interactions, /api/prompts） |
+| B2-8 | AsyncDispatcher 管线接入指标记录（5 处记录点） |
+| B2-9 | 42 个新增测试（MetricsCollector + Store + Snapshot） |
 
 ---
 
@@ -207,11 +234,11 @@ Citizens/MythicMobs Hook、TELEPORT/GIVE_EFFECT 动作、WorldGuard 集成、药
 
 | 指标 | 数值 |
 |------|------|
-| 源文件 | 56 个 Java |
-| 测试文件 | 6 个 Java |
-| 测试用例 | 93 个（0 failures） |
-| JAR 体积 | 23 MB |
-| Shade 依赖 | Gson, Guava, HikariCP, SQLite, MySQL, Jedis |
+| 源文件 | 61 个 Java |
+| 测试文件 | 9 个 Java |
+| 测试用例 | 133 个（0 failures） |
+| JAR 体积 | 29 MB |
+| Shade 依赖 | Gson, Guava, HikariCP, SQLite, MySQL, Jedis, Javalin, Jetty |
 | 可选 provided | Citizens, MythicMobs, WorldGuard |
 | CI | GitHub Actions (build → test → package) |
 

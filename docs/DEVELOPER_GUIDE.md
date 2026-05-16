@@ -1,6 +1,6 @@
 # AgenticNPC 开发者指南
 
-> 版本：v1.3-alpha | 最后更新：2026-05-10
+> 版本：v1.4-alpha | 最后更新：2026-05-11
 
 ---
 
@@ -99,6 +99,7 @@ AsyncPlayerChatEvent (异步线程)
 | RedisRateLimiter | **fail-open** | Redis 挂了不应阻止玩家交互 |
 | MySQL 连接 | **fail-fast** | 数据一致性要求，静默降级会丢失数据 |
 | LLM 熔断器 | **fail-fallback** | 返回降级话术 |
+| WebConsole | **fail-open** | 控制台启动失败不影响主插件 |
 
 **实现原则：**
 - fail-open：`catch (Exception) { return allow/SAFE; }` + WARN 日志
@@ -126,7 +127,35 @@ AsyncPlayerChatEvent (异步线程)
 
 事件类型枚举：`DIALOGUE_SUCCESS`, `ACTION_BLOCKED`, `INJECTION_ATTEMPT`, `RATE_LIMITED`, `CIRCUIT_OPEN`, `PARSE_FAILED`, `SEMANTIC_GUARD_SUSPICIOUS`, `SEMANTIC_GUARD_BLOCKED`
 
-### 4. 熔断器状态机
+### 4. Web Console 架构
+
+```
+AsyncDispatcher（异步线程）
+  ├→ MetricsCollector.recordSuccess()    ← 每次成功请求
+  ├→ MetricsCollector.recordFailure()    ← 每次失败
+  ├→ RecentInteractionStore.add()        ← 成功后记录
+  └→ PromptSnapshotStore.add()           ← 成功后记录快照
+
+WebConsole（Javalin，独立线程）
+  ├→ GET /console            → dashboard.html（暗色主题 Dashboard）
+  ├→ GET /console/prompts    → prompts.html（Prompt 快照查看器）
+  ├→ GET /console/login      → login.html（Token 登录页）
+  ├→ GET /api/dashboard      → JSON（系统状态 + 指标 + 最近对话）
+  ├→ GET /api/metrics        → JSON（MetricsCollector 快照）
+  ├→ GET /api/interactions   → JSON（RecentInteractionStore）
+  └→ GET /api/prompts        → JSON（PromptSnapshotStore）
+```
+
+**设计原则：**
+
+| 组件 | 策略 | 理由 |
+|------|------|------|
+| WebConsole 启动失败 | **fail-open** | 不影响主插件 |
+| MetricsCollector | **零线程** | LongAdder + AtomicLong，无额外线程 |
+| Prompt 快照 | **仅内存** | 隐私数据不落盘 |
+| 认证 | **Bearer Token** | 401 未认证，拒绝默认值 `change-me` |
+
+### 5. 熔断器状态机
 
 ```
   CLOSED ──(连续失败≥阈值)──→ OPEN ──(超时恢复时间)──→ HALF_OPEN
@@ -195,6 +224,8 @@ AsyncPlayerChatEvent (异步线程)
 | Prompt 回归 | `PromptRegressionTest` |
 | 输入安全（注入防御） | `InputSanitizerTest` |
 | fail-open 行为 | 对应组件的测试类 |
+| 指标采集器 | `MetricsCollectorTest` |
+| 环形缓冲区 | `RecentInteractionStoreTest` / `PromptSnapshotStoreTest` |
 
 ### Prompt Regression 测试
 
@@ -272,7 +303,7 @@ com.agenticnpc/
 │   ├── MythicMobsHook.java
 │   └── HookRegistry.java
 ├── dispatch/
-│   ├── AsyncDispatcher.java
+│   ├── AsyncDispatcher.java     ← 接入 Metrics/Snapshot 采集
 │   ├── LLMClient.java
 │   ├── CircuitBreaker.java
 │   ├── RateLimiter.java          ← 接口
@@ -309,6 +340,11 @@ com.agenticnpc/
 │   ├── AuditRepository.java
 │   ├── MySQLAuditRepository.java
 │   └── TokenTracker.java
+├── console/
+│   ├── WebConsole.java
+│   ├── MetricsCollector.java
+│   ├── RecentInteractionStore.java
+│   └── PromptSnapshotStore.java
 ├── storage/
 │   ├── EntityBrainStorage.java
 │   ├── PersistentDataStorage.java
@@ -335,6 +371,14 @@ com.agenticnpc/
 | `audit_log` | id (auto) | 审计日志 |
 | `token_usage` | id (auto) | Token 统计 |
 
+### 内存数据结构（Web Console，不落盘）
+
+| 结构 | 类 | 容量 | 策略 |
+|------|------|------|------|
+| 最近对话 | `RecentInteractionStore` | 20 条 | 环形缓冲，最新覆盖最旧 |
+| Prompt 快照 | `PromptSnapshotStore` | 100 条 | 环形缓冲，仅内存，不落盘 |
+| 指标采集 | `MetricsCollector` | 无限 | LongAdder + 60s 滑动窗口 |
+
 ---
 
 ## 构建
@@ -343,10 +387,10 @@ com.agenticnpc/
 mvn clean package
 
 # 产物
-target/agentic-npc-1.0-SNAPSHOT.jar  (~23MB)
+target/agentic-npc-1.0-SNAPSHOT.jar  (~29MB)
 
 # Shade 依赖
-Gson, Guava, HikariCP, SQLite, MySQL, Jedis → com.agenticnpc.libs.*
+Gson, Guava, HikariCP, SQLite, MySQL, Jedis, Javalin, Jetty → com.agenticnpc.libs.*
 
 # Provided 依赖（运行时由服务器提供）
 Spigot API, Citizens, MythicMobs, WorldGuard
@@ -362,13 +406,14 @@ Spigot API, Citizens, MythicMobs, WorldGuard
 - [ ] Redis 断连恢复验证
 - [ ] MySQL 长期运行数据一致性
 
-### Milestone B：多服化
+### Milestone B：多服化 + 可观测性
 - [ ] BungeeCord 会话同步
 - [ ] Redis Sorted Set 滑动窗口（替换固定窗口）
 - [ ] SemanticGuard JSON 输出 + 结构化解析
 - [ ] Redis fail-open 熔断保护
+- [x] B-2: Web 运维控制台（Javalin + Dashboard + Prompt Viewer + Metrics API）
 
-### Milestone C：可观测性
-- [ ] Web Console（审计日志查看面板）
-- [ ] Token 用量统计 Web 面板
-- [ ] Prometheus metrics 导出
+### Milestone C：可观测性增强
+- [ ] Prometheus metrics 导出（基于 /api/metrics）
+- [ ] Grafana Dashboard 模板
+- [ ] 审计日志 Web 搜索

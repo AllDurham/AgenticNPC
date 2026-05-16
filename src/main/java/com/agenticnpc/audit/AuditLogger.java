@@ -40,6 +40,7 @@ public class AuditLogger {
     }
 
     public record AuditEntry(
+        String       traceId,
         long         timestampMs,
         String       playerUuid,
         String       playerName,
@@ -81,14 +82,14 @@ public class AuditLogger {
         this.auditRepository = repository;
     }
 
-    // ---- 公开日志方法（非阻塞）----
+    // ---- 公开日志方法（非阻塞，全部要求 traceId）----
 
-    public void logDialogueSuccess(UUID playerId, String playerName,
+    public void logDialogueSuccess(String traceId, UUID playerId, String playerName,
                                     String brainId, String input,
                                     String output, ActionType actionType,
                                     String actionParams) {
         enqueue(new AuditEntry(
-            System.currentTimeMillis(),
+            traceId, System.currentTimeMillis(),
             playerId.toString(), playerName, brainId,
             EventType.DIALOGUE_SUCCESS,
             truncate(input, 200), truncate(output, 200),
@@ -96,49 +97,49 @@ public class AuditLogger {
         ));
     }
 
-    public void logActionBlocked(UUID playerId, String playerName,
+    public void logActionBlocked(String traceId, UUID playerId, String playerName,
                                   String brainId, String reason,
                                   ActionType actionType) {
         enqueue(new AuditEntry(
-            System.currentTimeMillis(),
+            traceId, System.currentTimeMillis(),
             playerId.toString(), playerName, brainId,
             EventType.ACTION_BLOCKED,
             null, reason, actionType, null, config.getServerId()
         ));
     }
 
-    public void logInjectionAttempt(UUID playerId, String playerName,
+    public void logInjectionAttempt(String traceId, UUID playerId, String playerName,
                                      String brainId, String rawInput) {
         enqueue(new AuditEntry(
-            System.currentTimeMillis(),
+            traceId, System.currentTimeMillis(),
             playerId.toString(), playerName, brainId,
             EventType.INJECTION_ATTEMPT,
             truncate(rawInput, 500), null, null, null, config.getServerId()
         ));
     }
 
-    public void logRateLimited(UUID playerId, String playerName, String brainId) {
+    public void logRateLimited(String traceId, UUID playerId, String playerName, String brainId) {
         enqueue(new AuditEntry(
-            System.currentTimeMillis(),
+            traceId, System.currentTimeMillis(),
             playerId.toString(), playerName, brainId,
             EventType.RATE_LIMITED,
             null, null, null, null, config.getServerId()
         ));
     }
 
-    public void logParseFailed(UUID playerId, String playerName,
+    public void logParseFailed(String traceId, UUID playerId, String playerName,
                                 String brainId, String rawContent) {
         enqueue(new AuditEntry(
-            System.currentTimeMillis(),
+            traceId, System.currentTimeMillis(),
             playerId.toString(), playerName, brainId,
             EventType.PARSE_FAILED,
             null, truncate(rawContent, 300), null, null, config.getServerId()
         ));
     }
 
-    public void logCircuitOpen(String brainId, int failureCount) {
+    public void logCircuitOpen(String traceId, String brainId, int failureCount) {
         enqueue(new AuditEntry(
-            System.currentTimeMillis(),
+            traceId, System.currentTimeMillis(),
             "SYSTEM", "SYSTEM", brainId,
             EventType.CIRCUIT_OPEN,
             null, "熔断器打开，连续失败次数: " + failureCount,
@@ -146,20 +147,20 @@ public class AuditLogger {
         ));
     }
 
-    public void logSemanticGuardSuspicious(UUID playerId, String playerName,
+    public void logSemanticGuardSuspicious(String traceId, UUID playerId, String playerName,
                                             String brainId, String input) {
         enqueue(new AuditEntry(
-            System.currentTimeMillis(),
+            traceId, System.currentTimeMillis(),
             playerId.toString(), playerName, brainId,
             EventType.SEMANTIC_GUARD_SUSPICIOUS,
             truncate(input, 500), null, null, null, config.getServerId()
         ));
     }
 
-    public void logSemanticGuardBlocked(UUID playerId, String playerName,
+    public void logSemanticGuardBlocked(String traceId, UUID playerId, String playerName,
                                          String brainId, String input) {
         enqueue(new AuditEntry(
-            System.currentTimeMillis(),
+            traceId, System.currentTimeMillis(),
             playerId.toString(), playerName, brainId,
             EventType.SEMANTIC_GUARD_BLOCKED,
             truncate(input, 500), null, null, null, config.getServerId()
@@ -265,6 +266,7 @@ public class AuditLogger {
      */
     private String buildLogLine(AuditEntry e) {
         Map<String, Object> json = new LinkedHashMap<>();
+        json.put("trace_id", e.traceId());
         json.put("timestamp", e.timestampMs());
         json.put("time", TIME_FORMAT.format(new Date(e.timestampMs())));
         json.put("event_type", e.eventType().name());

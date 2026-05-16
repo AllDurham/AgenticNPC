@@ -1,6 +1,6 @@
 # AgenticNPC 用户指南（服主版）
 
-> 版本：v1.3-alpha | 最后更新：2026-05-10
+> 版本：v1.4-alpha | 最后更新：2026-05-11
 
 ---
 
@@ -81,13 +81,15 @@ Layer 6 ─ ActionExecutor 执行前截断
 ### 可观测性
 
 - `/anpc health`：一键查看熔断状态、限流后端、Redis 状态、Token 消耗、错误计数
+- **Web 运维控制台**：浏览器打开 `http://localhost:8080/console`，实时查看系统状态、Token 指标、错误指标、最近 20 条对话
+- **Prompt Snapshot Viewer**：回放 AI 决策过程（最近 100 条 Prompt + LLM 原始输出）
 - 结构化审计日志（JSONL 格式）：每行一个 JSON，Web 面板可直接解析
 - Token 告警：单次请求 / 每日玩家消耗超阈值自动告警
 - 审计日志自动清理：按日期轮转，可配置保留天数
 
 ### 测试与质量
 
-- 93 个单元测试（JUnit 5 + Mockito）
+- 133 个单元测试（JUnit 5 + Mockito）
 - Prompt 回归测试（JSON fixture 驱动，防止人格漂移）
 - GitHub Actions CI（build → test → package）
 
@@ -268,6 +270,20 @@ semantic-guard:
 
 审核超时或失败时自动 fail-open（允许请求继续）。
 
+### Web 控制台配置
+
+```yaml
+web-console:
+  enabled: false              # 是否启用
+  host: "127.0.0.1"           # 监听地址（默认仅本机，不允许 0.0.0.0 作为默认值）
+  port: 8080                  # 端口
+  auth-token: "change-me"     # 认证 Token（必须修改！留空或使用默认值时拒绝启动）
+```
+
+访问方式：浏览器打开 `http://127.0.0.1:8080/console`，输入 auth-token 登录。
+
+> **安全提醒**：必须修改 `auth-token`，插件会在启动时检查是否为默认值。token 不会出现在日志中。
+
 ### 其他配置
 
 ```yaml
@@ -403,15 +419,41 @@ debug: false                 # 生产环境关闭调试日志
 
 影响极小。所有 LLM 调用在异步线程执行。`/anpc health` 的「最近错误(60s)」可以帮助监控异常。
 
+### Q6: 如何启用 Web 控制台？
+
+1. 修改 `config.yml` 中 `web-console.enabled: true`
+2. 修改 `auth-token` 为自定义强密码
+3. 重启服务器或执行 `/anpc reload`
+4. 浏览器打开 `http://你的服务器IP:8080/console`（默认仅 localhost 可访问）
+
+如果需要远程访问，将 `host` 改为服务器 IP，并配置防火墙放行端口。
+
+### Q7: Web 控制台安全吗？
+
+- 默认仅监听 `127.0.0.1`（本机访问）
+- 必须 Bearer Token 认证（拒绝默认值 `change-me`）
+- Token 不打印到日志
+- Web 服务异常不影响主插件
+- Prompt 快照仅保存在内存中，不落盘
+
 ---
 
 ## 更新日志
 
-### v1.3-alpha（当前版本）
+### v1.4-alpha（当前版本）
+- Web 运维控制台（Javalin，暗色主题 Dashboard）
+- 实时 Dashboard：系统状态 + Token 指标 + 错误指标 + 最近 20 条对话
+- Prompt Snapshot Viewer：回放 AI 决策过程（最近 100 条）
+- Metrics API（/api/dashboard, /api/metrics, /api/interactions, /api/prompts）
+- Bearer Token 认证（localhost-only 默认，拒绝默认 token）
+- 统一指标采集器（MetricsCollector，滑动窗口，零线程开销）
+- 测试用例增至 133 个
+
+### v1.3-alpha
 - Redis 跨服限流（双模式）
 - SemanticGuard 语义注入防御
 - /anpc health 运行状态观测
-- 单元测试体系（93 tests）
+- 单元测试体系（133 tests）
 - CI Pipeline（GitHub Actions）
 - Structured Audit（JSONL 格式）
 

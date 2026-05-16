@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgenticNPC Console</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, monospace; background: #0f1117; color: #e0e0e0; }
+  .header { background: #1a1d27; padding: 16px 24px; border-bottom: 1px solid #2d3148; display: flex; justify-content: space-between; align-items: center; }
+  .header h1 { font-size: 18px; color: #7c8aff; }
+  .header .meta { font-size: 12px; color: #666; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 8px; padding: 16px; }
+  .card h3 { font-size: 13px; color: #888; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 1px; }
+  .card .value { font-size: 28px; font-weight: bold; color: #fff; }
+  .card .sub { font-size: 12px; color: #666; margin-top: 4px; }
+  .card.ok .value { color: #4caf50; }
+  .card.warn .value { color: #ff9800; }
+  .card.err .value { color: #f44336; }
+  .card.info .value { color: #7c8aff; }
+  .section { margin-bottom: 24px; }
+  .section h2 { font-size: 16px; color: #aaa; margin-bottom: 12px; border-bottom: 1px solid #2d3148; padding-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #888; font-weight: normal; padding: 8px; border-bottom: 1px solid #2d3148; }
+  td { padding: 8px; border-bottom: 1px solid #1f2233; }
+  tr:hover td { background: #1f2233; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+  .badge-none { background: #2d3148; color: #888; }
+  .badge-give { background: #1b3a28; color: #4caf50; }
+  .badge-teleport { background: #3a2d1b; color: #ff9800; }
+  .badge-effect { background: #1b2d3a; color: #42a5f5; }
+  .badge-fallback { background: #3a1b1b; color: #f44336; }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot-green { background: #4caf50; }
+  .dot-yellow { background: #ff9800; }
+  .dot-red { background: #f44336; }
+  .dot-blue { background: #42a5f5; }
+  .nav { display: flex; gap: 16px; }
+  .nav a { color: #7c8aff; text-decoration: none; font-size: 13px; }
+  .nav a:hover { text-decoration: underline; }
+  .nav a.active { color: #fff; font-weight: bold; }
+  .refresh-bar { font-size: 12px; color: #555; text-align: right; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>AgenticNPC Console</h1>
+    <div class="nav" style="margin-top:6px;">
+      <a href="/console" class="active">Dashboard</a>
+      <a href="/console/prompts">Prompts</a>
+    </div>
+  </div>
+  <div class="meta">
+    <div>Server: <span id="server-id">-</span></div>
+    <div id="clock"></div>
+  </div>
+</div>
+<div class="container">
+  <div class="refresh-bar">Auto-refresh: 3s | Last: <span id="last-refresh">-</span></div>
+
+  <!-- System Status -->
+  <div class="section"><h2>System Status</h2></div>
+  <div class="grid" id="status-grid">
+    <div class="card info" id="card-circuit"><h3>LLM Circuit Breaker</h3><div class="value">-</div></div>
+    <div class="card info" id="card-sessions"><h3>Active AI Sessions</h3><div class="value">-</div><div class="sub">Processing: <span id="processing-count">0</span></div></div>
+    <div class="card info" id="card-queue"><h3>Queue Tasks</h3><div class="value">-</div></div>
+    <div class="card info" id="card-redis"><h3>Redis Status</h3><div class="value">-</div></div>
+    <div class="card info" id="card-memory"><h3>Memory Backend</h3><div class="value">-</div></div>
+    <div class="card info" id="card-guard"><h3>SemanticGuard</h3><div class="value">-</div></div>
+    <div class="card info" id="card-queue"><h3>Queue Depth</h3><div class="value">-</div></div>
+    <div class="card info" id="card-inflight"><h3>Inflight Requests</h3><div class="value">-</div></div>
+  </div>
+
+  <!-- Token Metrics -->
+  <div class="section"><h2>Token Metrics</h2></div>
+  <div class="grid" id="token-grid">
+    <div class="card"><h3>Today Tokens</h3><div class="value" id="today-tokens">-</div><div class="sub">Requests: <span id="today-requests">0</span></div></div>
+    <div class="card"><h3>Recent 1min Tokens</h3><div class="value" id="recent-tokens">-</div></div>
+    <div class="card"><h3>Avg Prompt Token</h3><div class="value" id="avg-prompt">-</div></div>
+    <div class="card"><h3>Max Latency</h3><div class="value" id="max-latency">-</div><div class="sub">Avg: <span id="avg-latency">0</span>ms</div></div>
+  </div>
+
+  <!-- Error Metrics -->
+  <div class="section"><h2>Error Metrics</h2></div>
+  <div class="grid" id="error-grid">
+    <div class="card"><h3>Recent 1min Errors</h3><div class="value" id="recent-errors">-</div></div>
+    <div class="card"><h3>SemanticGuard Blocks</h3><div class="value" id="sg-blocks">-</div></div>
+    <div class="card"><h3>Parse Fallbacks</h3><div class="value" id="parse-fallbacks">-</div></div>
+    <div class="card"><h3>Total Failures</h3><div class="value" id="total-failures">-</div></div>
+    <div class="card"><h3>Avg LLM Latency</h3><div class="value" id="avg-llm-latency">-</div></div>
+    <div class="card"><h3>LLM Timeouts</h3><div class="value" id="llm-timeouts">-</div></div>
+    <div class="card"><h3>Fallback Types</h3><div class="value" id="fallback-total">-</div><div class="sub" id="fallback-detail"></div></div>
+  </div>
+
+  <!-- Pipeline Metrics -->
+  <div class="section"><h2>Pipeline Metrics</h2></div>
+  <div class="grid">
+    <div class="card"><h3>Pipeline Max Latency</h3><div class="value" id="pipeline-max">-</div></div>
+    <div class="card"><h3>Stage Failures</h3><div class="value" id="stage-failures">-</div><div class="sub" id="stage-fail-detail"></div></div>
+  </div>
+
+  <!-- Prompt Variant Metrics -->
+  <div class="section"><h2>Prompt Variant Metrics</h2></div>
+  <div class="section">
+    <table>
+      <thead>
+        <tr>
+          <th>Variant</th><th>Requests</th><th>Avg Tokens</th>
+          <th>Fallback %</th><th>Action %</th><th>Avg Latency</th><th>Total Tokens</th>
+        </tr>
+      </thead>
+      <tbody id="variant-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Recent Interactions -->
+  <div class="section">
+    <h2>Recent Interactions (last 20)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>TraceId</th><th>Time</th><th>Player</th><th>NPC</th><th>Input</th>
+          <th>Action</th><th>Tokens</th><th>Latency</th><th>Fallback</th>
+        </tr>
+      </thead>
+      <tbody id="interactions-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const TOKEN = sessionStorage.getItem('anpc_token');
+
+function headers() {
+  return TOKEN ? {'Authorization': 'Bearer ' + TOKEN} : {};
+}
+
+function fmt(n) {
+  if (n == null) return '-';
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return '' + n;
+}
+
+function fmtTime(ms) {
+  if (!ms) return '-';
+  const d = new Date(ms);
+  return d.toLocaleTimeString('zh-CN', {hour12:false});
+}
+
+function actionBadge(type) {
+  if (!type || type === 'NONE') return '<span class="badge badge-none">NONE</span>';
+  if (type === 'GIVE_ITEM') return '<span class="badge badge-give">GIVE_ITEM</span>';
+  if (type === 'TELEPORT') return '<span class="badge badge-teleport">TELEPORT</span>';
+  if (type === 'GIVE_EFFECT' || type === 'GIVE_XP') return '<span class="badge badge-effect">' + type + '</span>';
+  return '<span class="badge badge-none">' + type + '</span>';
+}
+
+async function refresh() {
+  try {
+    // Dashboard data
+    const res = await fetch('/api/dashboard', {headers: headers()});
+    if (res.status === 401) { location.href = '/console/login'; return; }
+    const d = await res.json();
+
+    // Status
+    document.getElementById('server-id').textContent = d.serverId || '-';
+    setCard('card-circuit', d.circuitBreakerState, d.circuitBreakerState === 'CLOSED' ? 'ok' : d.circuitBreakerState === 'HALF_OPEN' ? 'warn' : 'err');
+    setCard('card-sessions', d.activeSessions, 'info');
+    document.getElementById('processing-count').textContent = d.processingCount || 0;
+    setCard('card-queue', d.queueTasks || 0, 'info');
+    setCard('card-redis', d.redisStatus || '-', d.redisStatus === 'PONG' ? 'ok' : 'warn');
+    setCard('card-memory', d.memoryBackend || '-', 'info');
+    setCard('card-guard', d.semanticGuardEnabled ? 'ON' : 'OFF', d.semanticGuardEnabled ? 'ok' : 'info');
+
+    // Metrics (must be defined before use)
+    const m = d.metrics || {};
+    setCard('card-queue', m.queueDepth || 0, 'info');
+    setCard('card-inflight', m.inflightRequests || 0, 'info');
+
+    // Tokens
+    document.getElementById('today-tokens').textContent = fmt(d.todayTokens);
+    document.getElementById('today-requests').textContent = d.todayRequests || 0;
+    document.getElementById('recent-tokens').textContent = fmt(m.recentMinuteTokens || 0);
+    const avgPrompt = m.totalRequests > 0 ? Math.round(m.promptTokensTotal / m.totalRequests) : 0;
+    document.getElementById('avg-prompt').textContent = fmt(avgPrompt);
+    document.getElementById('max-latency').textContent = Math.round(m.maxLatencyMs || 0) + 'ms';
+    document.getElementById('avg-latency').textContent = Math.round(m.avgLatencyMs || 0);
+
+    // Errors
+    document.getElementById('recent-errors').textContent = m.recentMinuteFailures || 0;
+    document.getElementById('sg-blocks').textContent = m.semanticBlocks || 0;
+    document.getElementById('parse-fallbacks').textContent = m.parseFallbacks || 0;
+    document.getElementById('total-failures').textContent = m.totalFailures || 0;
+    document.getElementById('avg-llm-latency').textContent = Math.round(m.avgLLMLatencyMs || 0) + 'ms';
+    document.getElementById('llm-timeouts').textContent = m.llmTimeoutCount || 0;
+    const ft = m.fallbackTypeCounts || {};
+    const ftTotal = Object.values(ft).reduce((a, b) => a + b, 0);
+    document.getElementById('fallback-total').textContent = ftTotal;
+    document.getElementById('fallback-detail').textContent =
+      Object.entries(ft).map(([k, v]) => k + '=' + v).join(' | ') || 'none';
+
+    // Pipeline metrics
+    document.getElementById('pipeline-max').textContent = Math.round(m.pipelineLatencyMax || 0) + 'ms';
+    const sf = m.stageFailureCounts || {};
+    const sfTotal = Object.values(sf).reduce((a, b) => a + b, 0);
+    document.getElementById('stage-failures').textContent = sfTotal;
+    document.getElementById('stage-fail-detail').textContent =
+      Object.entries(sf).map(([k, v]) => k + '=' + v).join(' | ') || 'none';
+
+    // Variant metrics
+    const vm = m.variantMetrics || {};
+    const vtbody = document.getElementById('variant-body');
+    vtbody.innerHTML = Object.entries(vm).map(([variant, v]) =>
+      '<tr>' +
+      '<td><code>' + esc(variant) + '</code></td>' +
+      '<td>' + (v.requestCount || 0) + '</td>' +
+      '<td>' + Math.round(v.avgTokens || 0) + '</td>' +
+      '<td>' + ((v.fallbackRate || 0) * 100).toFixed(1) + '%</td>' +
+      '<td>' + ((v.actionSuccessRate || 0) * 100).toFixed(1) + '%</td>' +
+      '<td>' + Math.round(v.avgLatencyMs || 0) + 'ms</td>' +
+      '<td>' + fmt(v.totalTokens || 0) + '</td>' +
+      '</tr>'
+    ).join('') || '<tr><td colspan="7" style="color:#666">No variant data yet</td></tr>';
+
+    // Interactions
+    const tbody = document.getElementById('interactions-body');
+    const items = d.recentInteractions || [];
+    tbody.innerHTML = items.map(r =>
+      '<tr>' +
+      '<td><code>' + esc(r.traceId || '-') + '</code></td>' +
+      '<td>' + fmtTime(r.timestampMs) + '</td>' +
+      '<td>' + esc(r.playerName) + '</td>' +
+      '<td>' + esc(r.brainId) + '</td>' +
+      '<td title="' + esc(r.inputSummary) + '">' + esc((r.inputSummary||'').substring(0,30)) + '</td>' +
+      '<td>' + actionBadge(r.actionType) + '</td>' +
+      '<td>' + (r.totalTokens || 0) + '</td>' +
+      '<td>' + (r.latencyMs || 0) + 'ms</td>' +
+      '<td>' + (r.fallback ? '<span class="badge badge-fallback">YES</span>' : '-') + '</td>' +
+      '</tr>'
+    ).join('');
+
+    document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString('zh-CN', {hour12:false});
+  } catch (e) {
+    console.error('Refresh failed:', e);
+  }
+}
+
+function setCard(id, value, cls) {
+  const card = document.getElementById(id);
+  card.querySelector('.value').textContent = value;
+  card.className = 'card ' + cls;
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleString('zh-CN');
+}
+
+refresh();
+setInterval(refresh, 3000);
+setInterval(updateClock, 1000);
+updateClock();
+</script>
+</body>
+</html>
